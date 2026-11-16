@@ -1,4 +1,4 @@
-"""Command-line entry points (console_scripts) for stb-re.
+"""Command-line entry points (console_scripts) for see-think-build.
 
 Thin wrappers that re-export the pipeline scripts' main() functions.
 """

@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "stb-re"
+name = "see-think-build"
 version = "0.1.0"
 description = "STB — See, Think, Build: runtime UI maps for Android apps, bridged to static reverse engineering"
 readme = "README.md"

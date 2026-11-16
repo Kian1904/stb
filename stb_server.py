@@ -77,7 +77,7 @@ def _adb_serial():
     return None
 
 mcp = MCPServer(
-    name="stb-re",
+    name="see-think-build",
     title="STB — See, Think, Build",
     description="Runtime UI maps for APKs bridged to static reverse engineering.",
     instructions=(

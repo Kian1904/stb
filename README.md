@@ -91,7 +91,7 @@ Test subjects: NewPipe 0.29.3, Aegis (open-source, F-Droid).
 
 ## Roadmap
 
-- [ ] MCP server (`stb-re`) so any coding agent can drive the pipeline
+- [ ] MCP server (`see-think-build`) so any coding agent can drive the pipeline
 - [ ] BFS traversal with per-activity budgets + drawer/scroll awareness
 - [ ] Text-input actions during traversal
 - [ ] Coverage regression tracking per APK version
@@ -101,7 +101,7 @@ Test subjects: NewPipe 0.29.3, Aegis (open-source, F-Droid).
 From PyPI (recommended):
 
 ```bash
-pip install stb-re
+pip install see-think-build
 stb-server            # run the MCP server (stdio)
 stb-see org.schabi.newpipe --max-screens 15   # CLI also available:
 stb-think uimap.json decompiled/              #   stb-see, stb-think,
