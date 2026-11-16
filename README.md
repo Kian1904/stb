@@ -96,6 +96,28 @@ Test subjects: NewPipe 0.29.3, Aegis (open-source, F-Droid).
 - [ ] Text-input actions during traversal
 - [ ] Coverage regression tracking per APK version
 
+## Install
+
+From PyPI (recommended):
+
+```bash
+pip install stb-re
+stb-server            # run the MCP server (stdio)
+stb-see org.schabi.newpipe --max-screens 15   # CLI also available:
+stb-think uimap.json decompiled/              #   stb-see, stb-think,
+stb-build uimap.json uimap_bridge.json        #   stb-build, stb-validate
+```
+
+From source:
+
+```bash
+git clone https://github.com/Kian1904/stb && cd stb
+pip install .
+```
+
+Python 3.10+; only hard dependency is the `mcp` package. `adb` and `jadx`
+are external binaries you install separately (see below).
+
 ## Cross-platform setup
 
 STB runs on **Linux, macOS, and Windows**. It talks to anything adb can reach:
