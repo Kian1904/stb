@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""STB Think-phase bridge: connect UI-map elements to decompiled code.
+
+For each element in the UI map JSON, search the jadx-decompiled sources for
+matching identifiers (resource-id, text, content-desc) and record the files
+that likely implement the element's behavior.
+
+Usage: python3 stb_bridge.py <uimap.json> <decompiled_dir> [--out bridge.json]
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+
+def search_code(decompiled_dir, pattern, is_regex=True, max_files=8):
+    """rg-based search returning file:line matches."""
+    cmd = ["rg", "--no-heading", "-l", "--glob", "*.java"]
+    if not is_regex:
+        cmd.append("-F")
+    cmd += [pattern, decompiled_dir]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=60)
+    except FileNotFoundError:
+        r = subprocess.run(["grep", "-rl", "--include=*.java", pattern, decompiled_dir],
+                           capture_output=True, timeout=120)
+    files = r.stdout.decode(errors="replace").splitlines()
+    return files[:max_files]
+
+def suggest_class_for_screen(focus_component, decompiled_dir):
+    """Find the Activity/Fragment class file for a focused component."""
+    comp = focus_component.replace("Window{", "").rstrip("}")
+    if "/" not in comp:
+        return None, []
+    pkg, cls = comp.split("/", 1)
+    path = os.path.join(decompiled_dir, "sources", pkg.replace(".", "/"), cls + ".java")
+    exists = os.path.exists(path)
+    return (path if exists else None), []
+
+def bridge_element(elem, decompiled_dir):
+    """Search decompiled code for evidence related to a UI element."""
+    evidence = []
+    seen = set()
+
+    candidates = []
+    if elem.get("res"):
+        candidates.append(("resource-id", elem["res"]))
+    if elem.get("desc"):
+        candidates.append(("content-desc", elem["desc"]))
+    if elem.get("text") and len(elem["text"]) > 2:
+        candidates.append(("text", elem["text"]))
+
+    for kind, pat in candidates:
+        if kind == "resource-id":
+            # resource id like 'btnNext' → R.id.btnNext in code
+            hits = search_code(decompiled_dir, f"R.id.{pat}", is_regex=False, max_files=5)
+        else:
+            # escape quotes for fixed-string search
+            hits = search_code(decompiled_dir, pat, is_regex=False, max_files=5)
+        for h in hits:
+            if h not in seen:
+                seen.add(h)
+                evidence.append({"via": kind, "pattern": pat, "file": h.replace(decompiled_dir + "/", "")})
+    return evidence
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("uimap")
+    ap.add_argument("decompiled_dir")
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    with open(args.uimap) as f:
+        uimap = json.load(f)
+
+    result = {
+        "package": uimap["package"],
+        "decompiled_dir": args.decompiled_dir,
+        "screens": [],
+    }
+
+    for s in uimap["screens"]:
+        screen_entry = {
+            "id": s["id"],
+            "focus": s["focus"],
+            "screen_class": None,
+            "elements": [],
+        }
+        # screen-level: which class implements this activity/fragment?
+        comp = s["focus"]
+        if comp.startswith("Window{"):
+            comp = comp.split("u0 ")[-1].rstrip("}")
+        pkg_cls = comp.split(":")[-1]  # drop window suffixes
+        if "/" in pkg_cls:
+            pkg, cls = pkg_cls.split("/", 1)
+            # handle the short form com.pkg/.MainActivity
+            if cls.startswith("."):
+                cls = pkg.split(".")[-1] + cls
+            # handle fully-qualified class in component (com.pkg/com.pkg.MainActivity)
+            if cls == pkg or cls.startswith(pkg + "."):
+                cls = cls[len(pkg) + 1:] if cls != pkg else cls.split(".")[-1]
+            path = os.path.join("sources", pkg.replace(".", "/"), cls + ".java")
+            if os.path.exists(os.path.join(args.decompiled_dir, path)):
+                screen_entry["screen_class"] = path
+        for e in s["elements"]:
+            ev = bridge_element(e, args.decompiled_dir)
+            screen_entry["elements"].append({
+                "label": e["text"] or e["desc"] or e["res"] or e["class"],
+                "class": e["class"],
+                "x": e["x"], "y": e["y"],
+                "evidence": ev[:4],
+            })
+        result["screens"].append(screen_entry)
+
+    out_path = args.out or args.uimap.replace(".json", "_bridge.json")
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2)
+
+    # summary
+    total_ev = sum(len(el["evidence"]) for s in result["screens"] for el in s["elements"])
+    print(f"Bridged {len(result['screens'])} screens, {total_ev} code references found")
+    print(f"Output: {out_path}")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,8 @@
+*.apk
+decompiled/
+newpipe-src/
+__pycache__/
+*.png
+report_*.html
+*_report.html
+.bridge.json
