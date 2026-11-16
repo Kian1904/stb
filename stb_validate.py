@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """STB ground-truth validation: compare STB UI map findings against the real
 NewPipe source (manifest activities + MainActivity drawer/tabs)."""
+import argparse
 import json
+import os
 import re
 import unicodedata
 
-UI_MAP = "/home/agentuser/.hermes/cache/scratch/stb_run/uimap_org.schabi.newpipe.json"
-SRC = "/home/agentuser/stb/newpipe-src"
+DEFAULT_UIMAP = os.path.expanduser(
+    "~/.hermes/cache/scratch/stb_run/uimap_org.schabi.newpipe.json")
+UI_MAP = os.environ.get("STB_UIMAP", DEFAULT_UIMAP)
+SRC = os.environ.get("STB_SOURCE", os.path.join(os.path.expanduser("~"),
+                                                "stb", "newpipe-src"))
 PKG = "org.schabi.newpipe"
 
 
@@ -16,7 +21,12 @@ def norm(x):
 
 
 def main():
-    b = json.load(open(UI_MAP))
+    ap = argparse.ArgumentParser()
+    ap.add_argument("uimap", nargs="?", default=UI_MAP)
+    ap.add_argument("source_dir", nargs="?", default=SRC)
+    args = ap.parse_args()
+    ui_map, src = args.uimap, args.source_dir
+    b = json.load(open(ui_map))
 
     # collect all STB-seen texts
     stb = set()
@@ -30,7 +40,7 @@ def main():
     print("=" * 60)
     print("GROUND TRUTH 1: Manifest activities")
     print("=" * 60)
-    m = open(f"{SRC}/app/src/main/AndroidManifest.xml").read()
+    m = open(os.path.join(src, "app/src/main/AndroidManifest.xml")).read()
     acts = set(re.findall(r'<activity[^>]*android:name="([^"]+)"', m))
     norm_acts = set()
     for a in acts:

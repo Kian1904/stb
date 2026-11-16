@@ -8,16 +8,39 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
 import xml.etree.ElementTree as ET
 
-SERIAL = "localhost:5555"
-WORK = os.path.expanduser("~/.hermes/cache/scratch/stb_run")
+
+def _detect_serial():
+    """Explicit STB_ADB_SERIAL wins; else first device/emulator adb sees."""
+    env = os.environ.get("STB_ADB_SERIAL", "").strip()
+    if env:
+        return env
+    adb = shutil.which("adb") or "adb"
+    try:
+        r = subprocess.run([adb, "devices"], capture_output=True, timeout=20)
+        for line in r.stdout.decode(errors="replace").splitlines()[1:]:
+            line = line.strip()
+            if "\t" in line:
+                serial, state = line.split("\t", 1)
+                if state.strip() in ("device", "emulator"):
+                    return serial
+    except Exception:
+        pass
+    return "localhost:5555"
+
+
+SERIAL = _detect_serial()
+WORK = os.environ.get("STB_RUN_DIR",
+                      os.path.expanduser("~/.hermes/cache/scratch/stb_run"))
+ADB_BIN = shutil.which("adb") or "adb"
 
 
 def adb(*args, timeout=30):
-    cmd = ["adb", "-s", SERIAL] + list(args)
+    cmd = [ADB_BIN, "-s", SERIAL] + list(args)
     r = subprocess.run(cmd, capture_output=True, timeout=timeout)
     return r.stdout.decode(errors="replace"), r.stderr.decode(errors="replace")
 

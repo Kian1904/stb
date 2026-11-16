@@ -11,21 +11,47 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 
+
 def search_code(decompiled_dir, pattern, is_regex=True, max_files=8):
-    """rg-based search returning file:line matches."""
-    cmd = ["rg", "--no-heading", "-l", "--glob", "*.java"]
-    if not is_regex:
-        cmd.append("-F")
-    cmd += [pattern, decompiled_dir]
-    try:
-        r = subprocess.run(cmd, capture_output=True, timeout=60)
-    except FileNotFoundError:
-        r = subprocess.run(["grep", "-rl", "--include=*.java", pattern, decompiled_dir],
-                           capture_output=True, timeout=120)
-    files = r.stdout.decode(errors="replace").splitlines()
-    return files[:max_files]
+    """Search decompiled sources; ripgrep if available, else pure Python."""
+    rg = shutil.which("rg")
+    if rg:
+        cmd = [rg, "--no-heading", "-l", "--glob", "*.java"]
+        if not is_regex:
+            cmd.append("-F")
+        cmd += [pattern, decompiled_dir]
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=60)
+            return r.stdout.decode(errors="replace").splitlines()[:max_files]
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    # portable fallback: walk the tree in Python (works on Windows/macOS/Linux)
+    rx = None
+    if is_regex:
+        try:
+            rx = re.compile(pattern)
+        except re.error:
+            is_regex = False
+    hits = []
+    for root, _dirs, files in os.walk(decompiled_dir):
+        for fn in files:
+            if not fn.endswith(".java"):
+                continue
+            fp = os.path.join(root, fn)
+            try:
+                with open(fp, "r", encoding="utf-8", errors="replace") as fh:
+                    data = fh.read()
+            except OSError:
+                continue
+            found = rx.search(data) if (is_regex and rx) else (pattern in data)
+            if found:
+                hits.append(fp)
+                if len(hits) >= max_files:
+                    return hits
+    return hits
 
 def suggest_class_for_screen(focus_component, decompiled_dir):
     """Find the Activity/Fragment class file for a focused component."""

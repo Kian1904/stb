@@ -96,6 +96,43 @@ Test subjects: NewPipe 0.29.3, Aegis (open-source, F-Droid).
 - [ ] Text-input actions during traversal
 - [ ] Coverage regression tracking per APK version
 
+## Cross-platform setup
+
+STB runs on **Linux, macOS, and Windows**. It talks to anything adb can reach:
+an official Android Studio emulator (AVD), a physical phone over USB, or a
+redroid container (Linux/Docker only). Requirements:
+
+- **Python 3.10+**
+- **adb** (Android platform-tools) — on PATH or via `STB_ADB`
+- **jadx** — on PATH or via `STB_JADX` (github.com/skylot/jadx; needs Java 17+)
+
+Setup per OS:
+
+| Step | Linux | macOS | Windows |
+|---|---|---|---|
+| adb | `sudo apt install adb` or platform-tools zip | `brew install android-platform-tools` | Download platform-tools zip, add to PATH |
+| jadx | `unzip jadx-x.y.zip` → add `bin/` to PATH | same | same (`jadx.bat`) |
+| Emulator | Android Studio AVD, USB phone, or redroid (Docker) | AVD or USB phone | AVD or USB phone |
+| MCP config | `python3` | `python3` | `python` (or full path) |
+
+Device targeting — set `STB_ADB_SERIAL` if more than one device is connected
+(find serials with `adb devices -l`):
+
+```bash
+export STB_ADB_SERIAL=emulator-5554   # or 127.0.0.1:5555, or a USB serial
+export STB_JADX=/path/to/jadx/bin/jadx
+export STB_DIR=~/stb                  # where maps/reports/decompiled go
+```
+
+Run `stb_status` first — it reports exactly what is missing and how to fix it.
+
+### Using a physical phone (Termux-friendly)
+
+1. Enable USB debugging (Developer options), connect, accept the fingerprint
+2. From Termux: `pkg install python android-tools`, clone this repo
+3. `python stb_server.py` — the phone you're debugging can be a *second*
+   device; the controlling agent runs anywhere adb works
+
 ## MCP server
 
 STB also ships as an MCP server (`stb_server.py`) so any MCP-capable coding agent
@@ -122,8 +159,8 @@ Config (generic stdio):
 }
 ```
 
-Requires the emulator stack (see Setup) and `/opt/jadx/bin/jadx`.
-Env overrides: `STB_DIR`, `STB_ADB_SERIAL`, `STB_CONTAINER`.
+Env overrides: `STB_DIR`, `STB_ADB_SERIAL`, `STB_ADB`, `STB_JADX`,
+`STB_RUN_DIR`, `STB_CONTAINER` (see Cross-platform setup above).
 
 ## License
 
