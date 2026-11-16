@@ -279,9 +279,10 @@ def stb_build(uimap: str) -> str:
 
 
 @mcp.tool(description="Decompile an APK with jadx. Args: apk_path, out_dir (optional, "
-                          "default ~/stb/decompiled/<name>). Returns decompiled dir to pass "
-                          "to stb_think.")
-def stb_jadx(apk_path: str, out_dir: str = "") -> str:
+                          "default ~/stb/decompiled/<name>), with_resources (true to also "
+                          "decode layout/menu XML — enables the layout-XML bridge chain "
+                          "res-id -> layout -> R.layout inflate site).")
+def stb_jadx(apk_path: str, out_dir: str = "", with_resources: bool = False) -> str:
     apk = _path_in_stb(apk_path)
     if not os.path.exists(apk):
         return f"ERROR: apk not found: {apk}"
@@ -293,7 +294,10 @@ def stb_jadx(apk_path: str, out_dir: str = "") -> str:
     if not jadx:
         return ("ERROR: jadx not found — install from github.com/skylot/jadx "
                 "and put on PATH, or set STB_JADX")
-    rc, out, err = _run([jadx, "-d", out_dir, "--no-res",
+    # v0.2: with_resources decodes res/layout + res/menu so the bridge can
+    # resolve res-ids to their declaring XML
+    flags = [] if with_resources else ["--no-res"]
+    rc, out, err = _run([jadx, "-d", out_dir, *flags,
                          "-j", "2", apk], timeout=600)
     tail = err.splitlines()[-1] if err else ""
     return f"exit={rc}\nDecompiled to: {out_dir}\n{jadx_tail(tail)}"

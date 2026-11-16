@@ -91,9 +91,12 @@ Test subjects: NewPipe 0.29.3, Aegis (open-source, F-Droid).
 
 ## Roadmap
 
-- [ ] MCP server (`see-think-build`) so any coding agent can drive the pipeline
-- [ ] BFS traversal with per-activity budgets + drawer/scroll awareness
-- [ ] Text-input actions during traversal
+- [x] **v0.1** MCP server (`see-think-build`) so any coding agent can drive the pipeline
+- [x] **v0.2** BFS-style traversal with scroll awareness (proactive swipes on long lists/drawers)
+- [x] **v0.2** Text-input actions during traversal (tap + typed sample)
+- [x] **v0.2** Layout-XML bridge: res-id → declaring layout/menu XML → `R.layout.*` inflate site
+- [x] **v0.2** Labeled-row tapping (drawer items report `clickable=false` but still navigate)
+- [ ] Direct deep-link navigation between screens (skip back-walking)
 - [ ] Coverage regression tracking per APK version
 
 ## Install

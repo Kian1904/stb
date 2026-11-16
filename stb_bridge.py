@@ -63,6 +63,37 @@ def suggest_class_for_screen(focus_component, decompiled_dir):
     exists = os.path.exists(path)
     return (path if exists else None), []
 
+def find_layout_bindings(decompiled_dir, res_id_name, max_hits=6):
+    """Chain: res-id name -> layout XML that declares it -> code that
+    inflates that layout (via R.layout.*) -> binding class if present.
+    Only works when jadx was run WITH resources (no --no-res)."""
+    res_dir = os.path.join(decompiled_dir, "resources", "res")
+    if not os.path.isdir(res_dir):
+        return None
+    layouts = []
+    rx = re.compile(r'@\+?id/' + re.escape(res_id_name) + r'\b')
+    for root, _dirs, files in os.walk(res_dir):
+        bn = os.path.basename(root)
+        if bn != "layout" and bn != "menu":
+            continue
+        for fn in files:
+            if not fn.endswith(".xml"):
+                continue
+            fp = os.path.join(root, fn)
+            try:
+                with open(fp, "r", encoding="utf-8", errors="replace") as fh:
+                    data = fh.read()
+            except OSError:
+                continue
+            if rx.search(data):
+                layouts.append(os.path.splitext(fn)[0])
+                if len(layouts) >= max_hits:
+                    break
+        if len(layouts) >= max_hits:
+            break
+    return layouts or None
+
+
 def bridge_element(elem, decompiled_dir):
     """Search decompiled code for evidence related to a UI element."""
     evidence = []
@@ -80,6 +111,20 @@ def bridge_element(elem, decompiled_dir):
         if kind == "resource-id":
             # resource id like 'btnNext' → R.id.btnNext in code
             hits = search_code(decompiled_dir, f"R.id.{pat}", is_regex=False, max_files=5)
+            # layout chain: which layout XML declares this id?
+            layouts = find_layout_bindings(decompiled_dir, pat)
+            if layouts:
+                for lay in layouts[:3]:
+                    laname = f"R.layout.{lay}"
+                    lhits = search_code(decompiled_dir, laname,
+                                        is_regex=False, max_files=2)
+                    for h in lhits:
+                        if h not in seen:
+                            seen.add(h)
+                            evidence.append({"via": "layout", "pattern": laname,
+                                             "file": h.replace(decompiled_dir + os.sep, "")})
+                evidence.append({"via": "layout-decl", "pattern": pat,
+                                 "layouts": layouts[:5]})
         else:
             # escape quotes for fixed-string search
             hits = search_code(decompiled_dir, pat, is_regex=False, max_files=5)

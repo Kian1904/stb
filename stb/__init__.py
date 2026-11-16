@@ -5,4 +5,4 @@ static code (Think), rendered into self-contained HTML reports (Build).
 Ships an MCP server so any coding agent can drive the whole pipeline.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

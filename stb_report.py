@@ -58,9 +58,17 @@ def main():
             if evs:
                 links = []
                 for ev in evs[:3]:
+                    if ev["via"] == "layout-decl":
+                        # layouts list entry (no file) — render as chip
+                        links.append(
+                            f'<code class="ev lay" title="declared in layout XMLs">'
+                            f'⚙ {esc(", ".join(ev.get("layouts", [])[:3]))}</code>'
+                        )
+                        continue
+                    badge = {"layout": "🧩 "}.get(ev["via"], "")
                     links.append(
-                        f'<code class="ev" title="via {esc(ev["via"])}: {esc(ev["pattern"])}">'
-                        f'{esc(ev["file"])}</code>'
+                        f'<code class="ev {esc(ev["via"])}" title="via {esc(ev["via"])}: {esc(ev["pattern"])}">'
+                        f'{badge}{esc(ev["file"])}</code>'
                     )
                 ev_html = "".join(links)
             else:
