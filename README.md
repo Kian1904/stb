@@ -96,6 +96,35 @@ Test subjects: NewPipe 0.29.3, Aegis (open-source, F-Droid).
 - [ ] Text-input actions during traversal
 - [ ] Coverage regression tracking per APK version
 
+## MCP server
+
+STB also ships as an MCP server (`stb_server.py`) so any MCP-capable coding agent
+(Claude Code, Codex, Hermes, …) can drive the whole pipeline:
+
+| Tool | What it does |
+|---|---|
+| `stb_status` | Lab health: container, adb, boot state, packages, jadx |
+| `stb_see` | Traverse an app → UI-map JSON (screens + elements + screenshots) |
+| `stb_dump_ui` | Accessibility tree of the CURRENT screen (works on FLAG_SECURE apps) |
+| `stb_screencap` | Screenshot of the current screen |
+| `stb_jadx` | Decompile an APK (jadx) |
+| `stb_think` | Bridge UI-map elements to decompiled code |
+| `stb_build` | Generate the self-contained HTML report |
+| `stb_validate` | Ground-truth check vs real app source |
+
+Config (generic stdio):
+
+```json
+{
+  "mcpServers": {
+    "stb": { "command": "python3", "args": ["/path/to/stb_server.py"] }
+  }
+}
+```
+
+Requires the emulator stack (see Setup) and `/opt/jadx/bin/jadx`.
+Env overrides: `STB_DIR`, `STB_ADB_SERIAL`, `STB_CONTAINER`.
+
 ## License
 
 MIT
