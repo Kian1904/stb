@@ -222,6 +222,79 @@ def type_into(e):
     return text
 
 
+def grant_runtime_permissions(pkg):
+    """Pre-grant all 'dangerous' runtime permissions the package requests so
+    permission dialogs never interrupt traversal (Markor lesson: the storage
+    permission flow swallowed the entire back budget)."""
+    out, _ = adb("shell", "dumpsys", "package", pkg, timeout=30)
+    perms = set()
+    in_req = False
+    for line in out.splitlines():
+        s = line.strip()
+        if s.startswith("requested permissions:"):
+            in_req = True
+            continue
+        if in_req:
+            if s.startswith("android.permission."):
+                perms.add(s.rstrip(":"))
+            elif s and not s.startswith("android.permission."):
+                in_req = False
+    dangerous = (
+        "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "READ_MEDIA_AUDIO",
+        "CAMERA", "RECORD_AUDIO", "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION", "READ_CONTACTS", "WRITE_CONTACTS",
+        "GET_ACCOUNTS", "READ_PHONE_STATE", "READ_CALENDAR",
+        "WRITE_CALENDAR", "BODY_SENSORS", "SEND_SMS", "READ_SMS",
+        "POST_NOTIFICATIONS", "READ_MEDIA_VISUAL_USER_SELECTED",
+    )
+    granted = 0
+    for p in sorted(perms):
+        short = p.split(".")[-1]
+        if short in dangerous:
+            _, err = adb("shell", "pm", "grant", pkg, p)
+            if "not a changeable permission" not in err and not err.strip():
+                granted += 1
+    print(f"  pre-granted {granted} runtime permissions for {pkg}")
+
+
+ONBOARDING_FOCUS = re.compile(
+    r"(intro|onboarding|welcome|setupwizard|getting.?started|first.?run|"
+    r"tour|walkthrough)", re.I)
+ONBOARDING_LABEL = re.compile(
+    r"^(next|skip|continue|get started|done|agree|allow|start|forward|got it"
+    r"|not now|maybe later|no thanks)$", re.I)
+
+
+def is_onboarding(focus, nodes):
+    """First-run wizard/permission gate: intro-ish activity OR the screen is
+    dominated by next/skip style buttons. Tapped through, never registered."""
+    if ONBOARDING_FOCUS.search(focus):
+        return True
+    btns = [e for e in nodes if e["clickable"]
+            and ONBOARDING_LABEL.match((e["text"] or e["desc"] or "").strip())]
+    return len(btns) >= 2
+
+
+def handle_onboarding(nodes):
+    """Tap the best forward button; return True if something was tapped."""
+    ranked = sorted(
+        (e for e in nodes if e["clickable"] and e["onscreen"]
+         and ONBOARDING_LABEL.match((e["text"] or e["desc"] or "").strip())),
+        key=lambda e: (0 if re.search(r"next|continue|get started|done|agree"
+                                      r"|allow|start", 
+                                      (e["text"] or e["desc"] or ""), re.I)
+                       else 1))
+    if not ranked:
+        return False
+    e = ranked[0]
+    label = e["text"] or e["desc"]
+    print(f"  onboarding: tap '{label}' ({e['x']},{e['y']})")
+    tap(e["x"], e["y"])
+    time.sleep(3)
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("package")
@@ -246,6 +319,7 @@ def main():
             adb("shell", "am", "force-stop", pkg_other)
     adb("shell", "input", "keyevent", "3")   # home
     time.sleep(1)
+    grant_runtime_permissions(args.package)
     launch_app(args.package)
 
     screens = {}
@@ -331,6 +405,26 @@ def main():
             adb("shell", "input", "keyevent", "3")
             launch_app(args.package)
             time.sleep(3)
+            continue
+        # onboarding gate: tap through the wizard, never register it as a
+        # screen (Markor lesson: IntroActivity ate the whole back budget)
+        pre_nodes = parse_nodes(dump_path)
+        if is_onboarding(focus, pre_nodes):
+            if not handle_onboarding(pre_nodes):
+                # onboarding-ish focus but no known button → force-tap
+                # bottom-right NEXT-style ImageButtons, else back out
+                btns = [e for e in pre_nodes if e["clickable"] and e["onscreen"]
+                        and "ImageButton" in (e["class"] or "")]
+                if btns:
+                    e2 = max(btns, key=lambda e: (e["x"], e["y"]))
+                    print(f"  onboarding: tap button ({e2['x']},{e2['y']})")
+                    tap(e2["x"], e2["y"])
+                    time.sleep(3)
+                else:
+                    print("  onboarding with no forward control — backing out")
+                    adb("shell", "input", "keyevent", "4")
+                    back_presses += 1
+                    time.sleep(2)
             continue
         if focus.startswith("com.android.") \
                 or focus.startswith("com.google.android.documentsui"):
