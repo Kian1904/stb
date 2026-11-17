@@ -167,18 +167,20 @@ def main():
             # handle the short form com.pkg/.MainActivity
             if cls.startswith("."):
                 cls = pkg.split(".")[-1] + cls
-            # handle fully-qualified class in component (com.pkg/com.pkg.MainActivity)
-            if cls == pkg or cls.startswith(pkg + "."):
-                cls = cls[len(pkg) + 1:] if cls != pkg else cls.split(".")[-1]
+            # handle fully-qualified class in component (com.pkg/com.pkg.MainActivity):
+            # keep the full class fqcn — its own package dirs give the source path
+            if cls == pkg:
+                cls = cls.split(".")[-1]
             # try full package, then progressively shorter prefixes AND
             # prefixes derived from the class package itself (applicationId
             # suffix like _tp often differs from the code package)
-            # if the class is fully qualified and NOT under the applicationId,
-            # its own package IS the source path root
             if not cls.startswith(pkg + "."):
                 candidates = [cls.rsplit(".", 1)[0], pkg]
             else:
-                candidates = [pkg]
+                # class lives in a sub-package of the applicationId, e.g.
+                # com.spotify.lite/.../welcome.WelcomeActivity → sources/
+                # com/spotify/lite/features/welcome/WelcomeActivity.java
+                candidates = [cls.rsplit(".", 1)[0], pkg]
             parts = pkg.split(".")
             for cut in range(1, len(parts) + 1):
                 candidates.append(".".join(parts[:len(parts) - cut]))

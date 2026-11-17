@@ -21,6 +21,12 @@ def see():
     _run_script("traverse.py")
 
 
+def dissect():
+    """stb-dissect <package> — one-command full flow: acquire APK,
+    install, traverse, decompile+bridge, HTML report."""
+    _run_script("dissect.py")
+
+
 def think():
     """stb-think <uimap.json> <decompiled_dir> — bridge UI to code."""
     _run_script("bridge.py")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "see-think-build"
-version = "0.2.0"
+version = "0.3.0"
 description = "STB — See, Think, Build: runtime UI maps for Android apps, bridged to static reverse engineering"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,7 @@ classifiers = [
 
 [project.scripts]
 stb-see = "stb.cli:see"
+stb-dissect = "stb.cli:dissect"
 stb-think = "stb.cli:think"
 stb-build = "stb.cli:build"
 stb-validate = "stb.cli:validate"
