@@ -237,6 +237,15 @@ def main():
     out_path = args.out or os.path.join(WORK, f"uimap_{args.package}.json")
 
     adb("connect", SERIAL)
+    # clean slate: force-stop ALL third-party apps (previous session may have
+    # left another app in the foreground — its screens would pollute the map)
+    out, _ = adb("shell", "pm", "list", "packages", "-3")
+    for line in out.splitlines():
+        pkg_other = line.replace("package:", "").strip()
+        if pkg_other and pkg_other != args.package:
+            adb("shell", "am", "force-stop", pkg_other)
+    adb("shell", "input", "keyevent", "3")   # home
+    time.sleep(1)
     launch_app(args.package)
 
     screens = {}
@@ -247,14 +256,18 @@ def main():
     taps = 0
     back_presses = 0
     stuck = 0
+    relaunches = 0
 
     dump_path = os.path.join(WORK, "cur.xml")
 
-    def capture_current():
-        """Dump+screenshot the current screen; register it. Returns sig."""
+    def capture_current(register=True):
+        """Dump+screenshot the current screen; register it. Returns sig.
+        register=False only grabs the signature (for guard checks)."""
         if not dump_ui(dump_path):
             return None
         sig, focus = screen_signature(dump_path)
+        if not register:
+            return sig
         nodes = parse_nodes(dump_path)
         png_path = os.path.join(
             WORK, f"screen_{sig.replace('|', '_').replace('/', '_')[:60]}.png")
@@ -287,17 +300,37 @@ def main():
 
     while taps < args.max_taps and len(screens) < args.max_screens \
             and back_presses < 25:
-        sig = capture_current()
+        sig = capture_current(register=False)
         if sig is None:
             time.sleep(2)
             continue
-        focus = screens[sig]["focus"]
+        focus = sig.split("|")[0]
 
-        # guards: launcher / system UI drift
+        # guards BEFORE registration: never treat launcher/system UI as a
+        # screen of the target app (their widgets would pollute the map)
         if "com.android.launcher" in focus:
+            if screens and all(s in dead for s in screens):
+                print("  at launcher and all known screens exhausted — done")
+                break
+            relaunches += 1
+            if relaunches > 3:
+                print("  relaunched 3+ times with no new screens — done")
+                break
             print("  drifted to launcher — relaunching")
             launch_app(args.package)
             back_presses += 1
+            # wait until the target app really owns the foreground
+            for _ in range(10):
+                fc = current_focus_component()
+                if fc.startswith(args.package):
+                    break
+                time.sleep(1.5)
+            continue
+        if focus.startswith("com.android.launcher") or \
+                focus.startswith("com.android.systemui"):
+            adb("shell", "input", "keyevent", "3")
+            launch_app(args.package)
+            time.sleep(3)
             continue
         if focus.startswith("com.android.") \
                 or focus.startswith("com.google.android.documentsui"):
@@ -306,6 +339,12 @@ def main():
             back_presses += 1
             time.sleep(2.5)
             continue
+
+        sig = capture_current()
+        if sig is None:
+            time.sleep(2)
+            continue
+        focus = screens[sig]["focus"]
 
         # depth-first within the current screen...
         cur = untried_on(sig)
@@ -370,6 +409,7 @@ def main():
                 time.sleep(2.5)
         else:
             stuck = 0
+            relaunches = 0
 
     result = {
         "package": args.package,

@@ -170,9 +170,31 @@ def main():
             # handle fully-qualified class in component (com.pkg/com.pkg.MainActivity)
             if cls == pkg or cls.startswith(pkg + "."):
                 cls = cls[len(pkg) + 1:] if cls != pkg else cls.split(".")[-1]
-            path = os.path.join("sources", pkg.replace(".", "/"), cls + ".java")
-            if os.path.exists(os.path.join(args.decompiled_dir, path)):
-                screen_entry["screen_class"] = path
+            # try full package, then progressively shorter prefixes AND
+            # prefixes derived from the class package itself (applicationId
+            # suffix like _tp often differs from the code package)
+            # if the class is fully qualified and NOT under the applicationId,
+            # its own package IS the source path root
+            if not cls.startswith(pkg + "."):
+                candidates = [cls.rsplit(".", 1)[0], pkg]
+            else:
+                candidates = [pkg]
+            parts = pkg.split(".")
+            for cut in range(1, len(parts) + 1):
+                candidates.append(".".join(parts[:len(parts) - cut]))
+            seen_paths = set()
+            simple = cls.rsplit(".", 1)[-1]
+            for trial_pkg in candidates:
+                if not trial_pkg:
+                    continue
+                path = os.path.join("sources", trial_pkg.replace(".", "/"),
+                                    simple + ".java")
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
+                if os.path.exists(os.path.join(args.decompiled_dir, path)):
+                    screen_entry["screen_class"] = path
+                    break
         for e in s["elements"]:
             ev = bridge_element(e, args.decompiled_dir)
             screen_entry["elements"].append({
