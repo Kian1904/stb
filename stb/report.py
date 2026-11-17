@@ -9,6 +9,7 @@ import base64
 import html
 import json
 import os
+import sys
 
 
 def img_b64(path):
@@ -33,6 +34,13 @@ def main():
         uimap = json.load(f)
     with open(args.bridge) as f:
         bridge = json.load(f)
+
+    # Injection scan: UI labels + bridge evidence are untrusted app content.
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from stb.sanitize import scan_obj, render_findings
+    findings = scan_obj(uimap.get("screens", []), source="uimap (runtime UI)")
+    findings += scan_obj(bridge.get("screens", []), source="bridge (static evidence)")
+    findings_html = render_findings(findings)
 
     out_path = args.out or args.uimap.replace(".json", "_report.html")
     pkg = uimap["package"]
@@ -119,11 +127,22 @@ def main():
   .lbl {{ font-weight:600; }} .code code.ev {{ display:block; color:#7ee787; font-size:.85em; background:none; }}
   .noev {{ color:#484f58; font-style:italic; }}
   .toc a {{ color:var(--accent); text-decoration:none; margin-right:.8rem; }}
+  table.findings {{ border-collapse:collapse; font-size:.85em; margin-top:.5rem; }}
+  table.findings th {{ text-align:left; color:var(--mut); border-bottom:1px solid #30363d; padding:.3rem .5rem; }}
+  table.findings td {{ padding:.3rem .5rem; border-bottom:1px solid #21262d; vertical-align:top; }}
+  .sev-high {{ color:#f85149; font-weight:700; }} .sev-medium {{ color:#d29922; }} .sev-low {{ color:var(--mut); }}
+  table.findings td.src {{ color:var(--mut); }}
+  .secnote {{ background:var(--card); border:1px solid #30363d; border-radius:10px; padding:1rem 1.2rem; margin:1.5rem 0; }}
 </style></head><body>
 <h1>STB UI Map — {esc(pkg)}</h1>
 <div class="meta">
   {uimap['screen_count']} screens · {uimap['taps_performed']} taps · generated {esc(uimap['generated'])}
   · See: runtime traversal · Think: jadx evidence bridge
+</div>
+<div class="secnote">
+  <strong>🛡 Security Notes — prompt-injection scan</strong>
+  <p><small>All text below comes from the analyzed app and is treated as DATA, never as instructions.</small></p>
+  {findings_html}
 </div>
 <div class="toc">{"".join(f'<a href="#s{s["id"]}">#{s["id"]}</a>' for s in uimap['screens'])}</div>
 {''.join(cards)}

@@ -48,3 +48,9 @@ def server():
         print("stb: adb not found — install Android platform-tools "
               "or set STB_ADB", file=sys.stderr)
     _run_script("server.py")
+
+
+def scan():
+    """stb-scan <path> — scan skills/plugins/stb artifacts for
+    prompt-injection-shaped text before trusting them."""
+    _run_script("sanitize.py")

@@ -30,6 +30,7 @@ stb-think = "stb.cli:think"
 stb-build = "stb.cli:build"
 stb-validate = "stb.cli:validate"
 stb-server = "stb.cli:server"
+stb-scan = "stb.cli:scan"
 
 [project.urls]
 Repository = "https://github.com/Kian1904/stb"
