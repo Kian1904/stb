@@ -680,13 +680,31 @@ def java_bindings_and_wiring(screen, idx, screens, flows, pkg):
     return "\n".join(lines), "".join(wiring)
 
 LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="12dp">
+    android:layout_height="match_parent">
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
 {children}
-</LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+{fab}
+</FrameLayout>
+"""
+
+FAB_XML = """    <Button
+        android:id="@+id/{vid}"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:text="{label}" />
 """
 
 ANDROID_GRADLE = """plugins {{ id 'com.android.application' }}
@@ -774,6 +792,7 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
         cls = java_class_for(s, i if i else 0)
         layout = layout_for(s, i)
         kids = []
+        fabs = []
         seen = set()
         for el in s["elements"]:
             label = (el.get("label") or "").strip()
@@ -781,14 +800,17 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
             if not label or (label, role) in seen:
                 continue
             seen.add((label, role))
-            tag = "Button" if ("button" in role or "floating" in role) else (
+            vid = "stb_btn_" + re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_").lower()[:32]
+            if "floating" in role:
+                fabs.append(FAB_XML.format(vid=vid, label=esc(label, 40)))
+                continue
+            tag = "Button" if "button" in role else (
                 "EditText" if "edit" in role else
                 "CheckBox" if "check" in role else "TextView")
             if tag == "TextView" and any(
                     (f.get("trigger") or {}).get("label") == label
                     for f in flows):
                 tag = "Button"  # flow trigger rendered tappable, regardless of role
-            vid = "stb_btn_" + re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_").lower()[:32]
             kids.append(
                 f'    <{tag}\n'
                 f'        android:id="@+id/{vid}"\n'
@@ -796,7 +818,8 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
                 f'        android:layout_height="wrap_content"\n'
                 f'        android:text="{esc(label, 70)}" />')
         with open(os.path.join(ldir, layout + ".xml"), "w") as f:
-            f.write(LAYOUT_XML.format(children="\n".join(kids)))
+            f.write(LAYOUT_XML.format(children="\n".join(kids),
+                                      fab="\n".join(fabs)))
         bindings, wiring = java_bindings_and_wiring(s, i, screens, flows, pkg)
         with open(os.path.join(jdir, cls + "Activity.java"), "w") as f:
             f.write(JAVA_ACTIVITY.format(pkg=pkg, part=1, cls=cls,
