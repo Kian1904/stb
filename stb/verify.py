@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -67,6 +68,102 @@ def original_labels(appmap):
     return interactive, all_l
 
 
+# --------------------------------------------------------------------------
+# Behavior-aware verification
+# --------------------------------------------------------------------------
+#
+# Labels say "the clone SHOWS the element". Behavior says "the clone DOES
+# what the original does". Expected behaviors are derived from the ORIGINAL
+# appmap's flows; observed behaviors from the CLONE's traversal log, which
+# records every tap and every "-> new screen" state change.
+#
+# Behavior classes:
+#   navigation  : a flow trigger label produced a new screen in the clone
+#   interactive : a trigger label was tapped without a screen change (valid
+#                 for in-place actions — dialogs, toggles, calendar months
+#                 rendered as one Activity)
+#   untapped    : trigger label never exercised during the clone traversal
+
+
+
+def _parse_tap_entry(line):
+    """'[tap 2/50] menu item 'New' @ (5, 83)' -> ('New',).
+    Backslash-free on purpose: regex literals get mangled by some
+    tooling pipelines, plain string ops never do."""
+    if not line.startswith("[tap ") or "]" not in line:
+        return None
+    # Both formats exist:
+    #   android: [tap 1/12] tap android.widget.Button 'LABEL' @ (x,y)
+    #   native : [tap 2/50] menu item 'New' @ (5, 83)
+    # Either way, the payload is everything after the first "] ".
+    rest = line.split("] ", 1)[1]
+    q1 = rest.find("'")
+    if q1 < 0:
+        return None
+    q2 = rest.find("'", q1 + 1)
+    if q2 < 0:
+        return None
+    label = rest[q1 + 1:q2].strip()
+    return label or None
+
+
+def observed_behaviors(clone_uimap, log_text):
+    """Parse the clone traversal log into {normalized_label: behavior}."""
+    behaviors = {}
+    if not log_text:
+        return behaviors
+    lines = log_text.splitlines()
+    for idx, line in enumerate(lines):
+        label = _parse_tap_entry(line)
+        if not label:
+            continue
+        lab = norm(label)
+        if not lab:
+            continue
+        nxt = ""
+        for cand in lines[idx + 1:idx + 4]:
+            if cand.strip():
+                nxt = cand
+                break
+        if "-> new screen " in nxt:
+            behaviors.setdefault(lab, "navigation")
+        else:
+            behaviors.setdefault(lab, "interactive")
+    return behaviors
+
+
+def expected_behaviors(appmap):
+    """From the ORIGINAL appmap flows: trigger label -> 'navigation'."""
+    exp = {}
+    for f in appmap.get("flows", []):
+        t = f.get("trigger") or {}
+        lab = norm(t.get("label"))
+        if lab:
+            exp.setdefault(lab, "navigation")
+    return exp
+
+
+def score_behaviors(expected, observed):
+    """Returns (checked, passed, missed, details[])."""
+    checked, passed, missed, details = 0, 0, [], []
+    for lab, kind in sorted(expected.items()):
+        checked += 1
+        obs = observed.get(lab)
+        if obs == kind:          # navigation expected AND observed
+            passed += 1
+            details.append({"label": lab, "expected": kind,
+                            "observed": obs, "ok": True})
+        elif obs:                 # tapped, but no screen change
+            missed.append(lab)
+            details.append({"label": lab, "expected": kind,
+                            "observed": obs, "ok": False})
+        else:                     # never exercised
+            missed.append(lab)
+            details.append({"label": lab, "expected": kind,
+                            "observed": None, "ok": False})
+    return checked, passed, missed, details
+
+
 def jaccard(a, b):
     if not a and not b:
         return 1.0
@@ -87,6 +184,9 @@ def main(argv=None):
     ap.add_argument("--app", default="stb-clone",
                     help="app name the AT-SPI walker should target")
     ap.add_argument("--max-actions", type=int, default=40)
+    ap.add_argument("--traversal-log", default=None,
+                    help="clone traversal log for behavior-aware scoring "
+                         "(default: <uimap>_traversal.log next to --uimap)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
 
@@ -113,6 +213,16 @@ def main(argv=None):
         print("give --uimap or --see", file=sys.stderr)
         return 2
 
+    log_path = args.traversal_log
+    if not log_path and args.uimap:
+        cand = args.uimap.rstrip(".json") + "_traversal.log"
+        cand2 = args.uimap.replace(".json", "") + "_traversal.log"
+        log_path = cand if os.path.exists(cand) else (
+            cand2 if os.path.exists(cand2) else None)
+    log_text = ""
+    if log_path and os.path.exists(log_path):
+        log_text = open(log_path, errors="replace").read()
+
     clone_labels, per_screen = collect_clone_labels(clone_uimap)
     orig_inter, orig_all = original_labels(appmap)
 
@@ -135,6 +245,12 @@ def main(argv=None):
             "coverage": round(len(hit) / len(need), 3) if need else None,
         })
 
+    exp_beh = expected_behaviors(appmap)
+    obs_beh = observed_behaviors(clone_uimap, log_text)
+    beh_checked, beh_passed, beh_missed, beh_details = \
+        score_behaviors(exp_beh, obs_beh)
+    beh_cov = round(beh_passed / beh_checked, 3) if beh_checked else None
+
     inter_cov = jaccard(orig_inter & clone_labels, orig_inter)
     all_cov = jaccard(orig_all & clone_labels, orig_all)
 
@@ -152,13 +268,20 @@ def main(argv=None):
         "overall": {
             "interactive_label_coverage": round(inter_cov, 3),
             "all_label_coverage": round(all_cov, 3),
+            "behavior_coverage": beh_cov,
+            "behaviors_checked": beh_checked,
+            "behaviors_passed": beh_passed,
+            "behaviors_missing": beh_missed[:25],
             "parts_passed": sum(1 for r in part_results if r["pass"]),
             "parts_total": len(part_results),
-            "verdict": ("PASS" if (part_results and
-                        all(r["pass"] for r in part_results))
+            "verdict": ("PASS" if (part_results
+                        and all(r["pass"] for r in part_results)
+                        and (beh_checked == 0
+                             or beh_passed / beh_checked >= 0.6))
                         else "PARTIAL"),
         },
         "parts": part_results,
+        "behaviors": beh_details,
         "extra_labels_in_clone": sorted(clone_labels - orig_all)[:40],
     }
 
@@ -173,6 +296,14 @@ def main(argv=None):
           f"interactive-coverage {o['interactive_label_coverage']}  "
           f"all-labels {o['all_label_coverage']}")
     print(f"  parts: {o['parts_passed']}/{o['parts_total']} passed")
+    if beh_checked:
+        print(f"  behaviors: {beh_passed}/{beh_checked} "
+              f"(coverage {beh_cov})")
+        for d in beh_details:
+            mark = "OK " if d["ok"] else "MISS"
+            obs = d["observed"] or "never-exercised"
+            print(f"    [{mark}] {d['label'][:40]:<40} "
+                  f"expected={d['expected']} observed={obs}")
     for r in part_results:
         print(f"    part {r['part']} [{r['title'][:28]:<28}] "
               f"{r['seen']}/{r['must_see']} "
