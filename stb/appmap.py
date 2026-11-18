@@ -90,8 +90,8 @@ def collect_named(elements):
 # flows: parse traversal logs -> edges
 # --------------------------------------------------------------------------
 
-TAP_RE = re.compile(r"\[tap (\d+)/\d+\] ([\w ]+) '([^']*)'")
-NEW_RE = re.compile(r"-> new screen (\w+)")
+TAP_RE = re.compile(r"\[tap (\d+)/\d+\] ([\w .]+) '([^']*)'")
+NEW_RE = re.compile(r"-> new screen ([^\s\(]+)")
 BACK_RE = re.compile(r"\[back (\d+)/\d+\]")
 SWIPE_RE = re.compile(r"\[swipe")
 
@@ -287,7 +287,8 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     ap = argparse.ArgumentParser()
     ap.add_argument("uimap")
-    ap.add_argument("bridge")
+    ap.add_argument("bridge", nargs="?", default=None,
+                    help="bridge JSON (optional: map without evidence)")
     ap.add_argument("--traversal-log", default=None,
                     help="see-phase log (enables flows reconstruction)")
     ap.add_argument("--source", default=None,
@@ -296,9 +297,12 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     uimap = json.load(open(args.uimap))
-    bridge = json.load(open(args.bridge))
-    screens, flows, states, functions, _ = build_appmap(
-        uimap, bridge, args.traversal_log)
+    bridge = json.load(open(args.bridge)) if args.bridge else {}
+    tlog = args.traversal_log or (
+        os.path.splitext(args.uimap)[0] + "_traversal.log")
+    if not os.path.exists(tlog):
+        tlog = None
+    screens, flows, states, functions, _ = build_appmap(uimap, bridge, tlog)
 
     named = [f for f in functions]
     appmap = {

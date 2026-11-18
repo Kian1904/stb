@@ -235,6 +235,8 @@ def main():
 
     os.makedirs(WORK, exist_ok=True)
     out_path = args.out or os.path.join(WORK, f"uimap_{args.package}.json")
+    tlog_path = os.path.splitext(out_path)[0] + "_traversal.log"
+    tlog = open(tlog_path, "w", buffering=1)
 
     adb("connect", SERIAL)
     # clean slate: force-stop ALL third-party apps (previous session may have
@@ -372,11 +374,15 @@ def main():
         label = e["text"] or e["desc"] or e["res"] or e["class"]
         if e["editable"]:
             print(f"  input ({e['x']},{e['y']}) {e['class']} '{label}'")
+            tlog.write(f"[tap {taps+1}/{args.max_taps}] input {e['class']} "
+                       f"'{label}' @ ({e['x']},{e['y']})\n")
             typed = type_into(e)
             taps += 1
             print(f"    typed: '{typed}'")
         else:
             print(f"  tap ({e['x']},{e['y']}) {e['class']} '{label}'")
+            tlog.write(f"[tap {taps+1}/{args.max_taps}] tap {e['class']} "
+                       f"'{label}' @ ({e['x']},{e['y']})\n")
             tap(e["x"], e["y"])
             taps += 1
         back_presses = 0
@@ -398,6 +404,9 @@ def main():
 
         # stuck detection: same signature after the interaction
         new_sig = capture_current() or sig
+        if new_sig != sig:
+            tlog.write(f"  -> new screen {new_sig} "
+                       f"('{screens[new_sig]['focus'] if new_sig in screens else '?'}')\n")
         if new_sig == sig:
             stuck += 1
             if stuck >= 2 and sig not in dead:
@@ -411,11 +420,13 @@ def main():
             stuck = 0
             relaunches = 0
 
+    tlog.close()
     result = {
         "package": args.package,
         "activity": args.activity,
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "screen_count": len(screens),
+        "traversal_log": tlog_path,
         "taps_performed": taps,
         "back_presses": back_presses,
         "swipes_performed": sum(swipes.values()),
