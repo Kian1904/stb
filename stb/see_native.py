@@ -136,6 +136,13 @@ class NativeTraverser:
         self.tried = set()  # (screen_sig, element_key) pairs already clicked
         self.total_taps = 0
         self.spawned_from = 0  # clicks that created a new window/tab
+        self.events = []  # traversal log lines (tap + transitions)
+        self._menu_pending = set()  # menus with unclicked items
+        self._menu_item_done = set()  # item keys already clicked
+
+    def log(self, msg):
+        print(msg)
+        self.events.append(msg)
 
     @staticmethod
     def _spawns_blank_window(el):
@@ -175,13 +182,29 @@ class NativeTraverser:
 
     # --- traversal ------------------------------------------------------
     def _frame_title(self, app):
+        """Main frame title, plus any open dialog titles.
+
+        Dialogs live as sibling frames/dialogs under the application node.
+        Including them in the title makes an open dialog a DISTINCT screen
+        (deep-see), instead of silently mutating the base screen's element
+        list. That was the reason dialog flows never showed up in a See map.
+        """
+        main = self.hint
+        dialogs = []
         try:
             for c in app:
-                if c.getRoleName() == "frame":
-                    return (c.name or "").strip()
+                role = c.getRoleName()
+                if role == "frame":
+                    main = (c.name or "").strip() or main
+                elif role in ("dialog", "alert", "file chooser"):
+                    nm = (c.name or "").strip()
+                    if nm:
+                        dialogs.append(nm)
         except Exception:
             pass
-        return self.hint
+        if dialogs:
+            return main + " [" + " + ".join(sorted(set(dialogs))) + "]"
+        return main
 
     # Roles whose text/state changes just from hovering a menu or moving the
     # caret — they must NOT define a new screen.
@@ -231,78 +254,134 @@ class NativeTraverser:
         return out
 
     def run(self, out_dir):
+        """Deep-see traversal (proven menu-sweep pattern + per-screen BFS).
+
+        GTK popups expose their SHOWING items with coordinates; after one
+        click the popup closes. So: open menu -> click ONE untried item ->
+        escape -> repeat, tracking a done-set. Dialogs get distinct screen
+        signatures because _frame_title includes open dialog names.
+        """
         self.out_dir = out_dir
         os.makedirs(out_dir, exist_ok=True)
         taps = 0
-        relaunches = 0
-        while taps < self.max_actions:
-            cur = self.capture_screen()
+        blank_seen = set()
+        spawns = 0
+        done_items = set()
+        menu_cursor = 0
+
+        def escape(n=1):
+            for _ in range(n):
+                sh(["xdotool", "key", "--clearmodifiers", "Escape"])
+                time.sleep(0.5)
+
+        def cap():
+            return self.capture_screen(register=True)
+
+        cur = cap()
+        if cur is None:
+            self.log("[see-native] app not visible — done")
+            return self.screens
+
+        # ---------- phase 1: menu sweep ----------
+        for _round in range(self.max_actions):
+            if taps >= self.max_actions:
+                break
+            _sig, _title, elements = cur
+            top = [(k, e) for k, e in self.interactables(elements)
+                   if e["role"] == "menu" and e.get("pos")]
+            if not top or menu_cursor >= len(top):
+                break
+            _mkey, menu_el = top[menu_cursor % len(top)]
+            self.click_center(menu_el["pos"])
+            taps += 1
+            self.total_taps = taps
+            time.sleep(0.9)
+            opened = self.capture_screen(register=False)
+            if opened is None:
+                escape()
+                cur = cap()
+                continue
+            items = [(k2, e2)
+                     for k2, e2 in self.interactables(opened[2])
+                     if e2["role"] == "menu item" and e2.get("pos")]
+            nxt = [(k2, e2) for k2, e2 in items
+                   if k2 not in done_items]
+            if not nxt:
+                escape()
+                menu_cursor += 1
+                if menu_cursor >= len(top):
+                    break
+                cur = cap()
+                continue
+            k2, e2 = nxt[0]
+            is_blank = self._spawns_blank_window(e2)
+            if is_blank and (k2 in blank_seen or spawns >= 3):
+                done_items.add(k2)
+                escape()
+                cur = cap()
+                continue
+            self.log(f"[tap {taps+1}/{self.max_actions}] menu item "
+                     f"'{e2['name'][:40]}' @ {e2['pos'][:2]}")
+            before = self.capture_screen(register=False)
+            self.click_center(e2["pos"])
+            taps += 1
+            self.total_taps = taps
+            done_items.add(k2)
+            if is_blank:
+                blank_seen.add(k2)
+                spawns += 1
+            time.sleep(1.2)
+            after = self.capture_screen(register=True)
+            if after and after[0] != before[0]:
+                self.log(f"  -> new screen {after[0]} "
+                         f"({after[1][:40]!r})")
+            escape()
+            cur = cap()
             if cur is None:
-                print("[see-native] app not visible — done")
+                break
+
+        # ---------- phase 2: per-screen BFS ----------
+        relaunches = 0
+        while taps < self.max_actions and relaunches < 8:
+            cur = cap()
+            if cur is None:
+                self.log("[see-native] app not visible — done")
                 break
             sig, _title, elements = cur
             todo = [(k, e) for k, e in self.interactables(elements)
-                    if (sig, k) not in self.tried]
-            # Anti-thrash: opening a top-level menu must not eat the budget.
-            # Menus are cheap and identical across tabs — dedupe them GLOBALLY
-            # (by element key, not per-sig) so 'File' is tapped once per app,
-            # and skip 'New'-style items that only spawn empty windows/tabs
-            # when we have already done so (thrash guard).
-            todo = [(k, e) for k, e in todo
-                    if e["role"] != "menu" or
-                    not any(k2 == k for (_s, k2) in self.tried)]
-            spawned = self.spawned_from > 3
-            if spawned:
-                todo = [(k, e) for k, e in todo
-                        if not self._spawns_blank_window(e)]
+                    if (sig, k) not in self.tried
+                    and e["role"] != "menu item"
+                    and not (self._spawns_blank_window(e)
+                             and k in blank_seen)]
             if not todo:
-                # per-screen exhausted — but prefer global menu exploration:
-                # menus (File/Edit/View/Help) should each be opened once even
-                # if the window title changed (new tab). Prefer an untried
-                # top-level menu before giving up.
-                menus = [(k, e) for k, e in self.interactables(elements)
-                         if e["role"] == "menu"
-                         and all(k2 != k for (_s, k2) in self.tried)]
-                if menus and relaunches < 6:
+                if relaunches < 4:
                     relaunches += 1
-                    key, el = menus[0]
-                    self.tried.add((sig, key))
-                    print(f"[explore] open menu '{el['name']}'")
-                    self.click_center(el["pos"])
-                    taps += 1
-                    self.total_taps = taps
-                    time.sleep(1.2)
+                    escape()
                     continue
-                print(f"[see-native] screen {sig} exhausted")
-                if relaunches < 1:
-                    relaunches += 1
-                    sh(["xdotool", "key", "--clearmodifiers", "Escape"])
-                    time.sleep(1)
-                    continue
+                self.log(f"[see-native] screen {sig} exhausted")
                 break
             key, el = todo[0]
             self.tried.add((sig, key))
-            print(f"[tap {taps+1}/{self.max_actions}] {el['role']} "
-                  f"'{el['name'][:40]}' @ {el['pos'][:2]}")
+            self.log(f"[tap {taps+1}/{self.max_actions}] {el['role']} "
+                     f"'{el['name'][:40]}' @ {el['pos'][:2]}")
             before = self.capture_screen(register=False)
             self.click_center(el["pos"])
             taps += 1
             self.total_taps = taps
             time.sleep(1.2)
-            after = self.capture_screen()
+            after = self.capture_screen(register=True)
             if after and after[0] != before[0]:
-                after_title = after[1]
-                # did this click spawn an empty window/tab?
-                if "Untitled" in after_title or \
-                        ("new" in el["name"].lower() and
-                         "untitled" in after_title.lower()):
-                    self.spawned_from += 1
-                print(f"  -> new screen {after[0]} ({after_title[:40]!r})")
-            # close menus/dialogs that opened to keep BFS flat
-            if after and any("menu" in e["role"] for e in after[2]):
-                pass  # menu contents are already part of the tree
-        print(f"[see-native] done: {len(self.screens)} screens, "
-              f"{taps} interactions")
+                self.log(f"  -> new screen {after[0]} "
+                         f"({after[1][:40]!r})")
+                bt = sum(1 for e in before[2] if e["role"] == "page tab")
+                at = sum(1 for e in after[2] if e["role"] == "page tab")
+                if at > bt and self._spawns_blank_window(el):
+                    blank_seen.add(key)
+                    spawns += 1
+                escape()
+
+        self.log(f"[see-native] done: {len(self.screens)} screens, "
+                 f"{taps} interactions")
         return self.screens
 
 
@@ -315,12 +394,21 @@ def main(argv=None):
     ap.add_argument("--out", required=True, help="uimap JSON output path")
     ap.add_argument("--no-shot", action="store_true",
                     help="skip screenshots (import may be absent)")
+    ap.add_argument("--traversal-log", default=None,
+                    help="write tap/transition log here "
+                         "(default: <out>_traversal.log)")
     args = ap.parse_args(argv)
 
     out_dir = os.path.splitext(args.out)[0] + "_shots"
     t = NativeTraverser(args.app, args.max_actions, not args.no_shot)
     t.run(out_dir)
     taps = t.total_taps
+
+    log_path = args.traversal_log or (
+        os.path.splitext(args.out)[0] + "_traversal.log")
+    with open(log_path, "w") as f:
+        f.write("\n".join(t.events) + "\n")
+    print(f"traversal log: {log_path}")
 
     uimap = {
         "package": f"native:{args.app}",

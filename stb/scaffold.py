@@ -84,11 +84,24 @@ def collect_menubar(screens):
         # root = top-level menus in order
         root = []
         stack = []  # list of open groups: dicts with "items"
+        bar_y = None  # y coordinate of the menu bar row
         for el in s["elements"]:
             role = (el.get("role") or "").lower()
             label = (el.get("label") or "").strip()
             if not label or "menu bar" in role:
                 continue
+            y = el.get("pos")[1] if el.get("pos") else None
+            # Ambiguous nesting fix: AT-SPI dumps menus depth-first with no
+            # explicit close marker, so consecutive top-level menus (File,
+            # Edit, Search, View...) used to nest inside the previous one.
+            # Menubar-level menus share the same y as the first menu; a popup
+            # / submenu menu sits lower. Close the open stack when we see a
+            # menu at menubar level again.
+            if role == "menu" and y is not None and bar_y is None:
+                bar_y = y
+            if role == "menu" and y is not None and bar_y is not None \
+                    and abs(y - bar_y) <= 2:
+                stack = []
             if role == "menu":
                 if not stack:
                     g = {"label": label, "items": []}
@@ -302,8 +315,34 @@ say (const char *fmt, ...)
 static const char *
 widget_label (GtkWidget *w)
 {
-  const char *id = gtk_buildable_get_name (GTK_BUILDABLE (w));
-  return id ? id : "?";
+  const char *id;
+  if (!w || !GTK_IS_BUILDABLE (w))
+    return "?";
+  id = gtk_buildable_get_name (GTK_BUILDABLE (w));
+  return (id && *id) ? id : "?";
+}
+
+/* The current page is either a GtkTextView (tabs we created) or a
+ * container GtkBox built from the appmap (static pages). Never blind-cast:
+ * find the first descendant that really is a text view, else NULL. */
+static GtkTextView *
+find_text_view (GtkWidget *w)
+{
+  if (!w)
+    return NULL;
+  if (GTK_IS_TEXT_VIEW (w))
+    return GTK_TEXT_VIEW (w);
+  if (GTK_IS_CONTAINER (w))
+    {
+      GList *kids = gtk_container_get_children (GTK_CONTAINER (w));
+      GList *it;
+      GtkTextView *found = NULL;
+      for (it = kids; it && !found; it = it->next)
+        found = find_text_view (GTK_WIDGET (it->data));
+      g_list_free (kids);
+      return found;
+    }
+  return NULL;
 }
 
 static GtkTextView *
@@ -312,7 +351,7 @@ current_view (void)
   int page = gtk_notebook_get_current_page (notebook);
   if (page < 0)
     return NULL;
-  return GTK_TEXT_VIEW (gtk_notebook_get_nth_page (notebook, page));
+  return find_text_view (gtk_notebook_get_nth_page (notebook, page));
 }
 
 /* ---- part 3: real actions ------------------------------------------------ */
@@ -489,7 +528,12 @@ stb_on_widget (GtkWidget *w, gpointer data)
 {
   const char *id = widget_label (w);
   (void) data;
-  if (strstr (id, "_quit") || strstr (id, "close_window"))
+  if (!id || g_strcmp0 (id, "?") == 0)
+    {
+      say ("action: (unnamed widget — ignored)");
+      return;
+    }
+  if (strstr (id, "_quit"))
     act_quit ();
   else if (strstr (id, "_open"))
     act_open ();
