@@ -335,8 +335,10 @@ def main():
             time.sleep(3)
             continue
         if focus.startswith("com.android.") \
-                or focus.startswith("com.google.android.documentsui"):
-            print("  in system UI — backing out")
+                or focus.startswith("com.google.android.documentsui") \
+                or (not focus.startswith(args.package)
+                    and not focus.startswith("org.stb.")):
+            print("  in foreign app", focus[:60], "— backing out")
             adb("shell", "input", "keyevent", "4")
             back_presses += 1
             time.sleep(2.5)
