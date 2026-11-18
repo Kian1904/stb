@@ -682,6 +682,17 @@ def java_class_for(screen, idx):
     return f"{base}{idx}"
 
 
+def layout_for(screen, idx):
+    """Layout resource id — must be unique per screen.
+
+    Flutter/Compose apps report one single Activity for every screen, so
+    name['base'] is identical across screens; without the index suffix later
+    screens overwrite earlier layout XMLs and only the last one survives.
+    """
+    base = ident(screen["name"]["base"] or "screen", "l")
+    return base if not idx else f"{base}_{idx}"
+
+
 def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
     pkg = app_id
     root = os.path.join(out_dir)
@@ -711,7 +722,7 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
     extra = []
     for i, s in enumerate(screens):
         cls = java_class_for(s, i if i else 0)
-        layout = ident(s["name"]["base"] or f"screen_{i}", "l")
+        layout = layout_for(s, i)
         kids = []
         seen = set()
         for el in s["elements"]:
@@ -746,8 +757,8 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
                                                40) if screens else "",
                                      count=len(screens[0]["elements"])
                                      if screens else 0,
-                                     layout=ident(screens[0]["name"]["base"],
-                                                  "l") if screens else "main"))
+                                     layout=layout_for(screens[0], 0)
+                                     if screens else "main"))
     with open(os.path.join(root, "app", "src", "main",
                            "AndroidManifest.xml"), "w") as f:
         f.write(MANIFEST.format(title=esc(title or "stb clone"),
