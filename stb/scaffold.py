@@ -692,7 +692,14 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
         os.makedirs(d, exist_ok=True)
 
     with open(os.path.join(root, "settings.gradle"), "w") as f:
-        f.write("rootProject.name = 'stb-clone'\n"
+        f.write("pluginManagement {\n"
+                "    repositories { google(); mavenCentral(); gradlePluginPortal() }\n"
+                "}\n"
+                "dependencyResolutionManagement {\n"
+                "    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n"
+                "    repositories { google(); mavenCentral() }\n"
+                "}\n"
+                "rootProject.name = 'stb-clone'\n"
                 "include ':app'\n")
     with open(os.path.join(root, "build.gradle"), "w") as f:
         f.write("plugins { id 'com.android.application' version '8.5.0' "
