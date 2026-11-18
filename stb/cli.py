@@ -54,3 +54,39 @@ def scan():
     """stb-scan <path> — scan skills/plugins/stb artifacts for
     prompt-injection-shaped text before trusting them."""
     _run_script("sanitize.py")
+
+
+def appmap():
+    """stb-appmap <uimap.json> [bridge.json] [--traversal-log F] —
+    unified JSON app map (screens+flows+states+functions)."""
+    _run_script("appmap.py")
+
+
+def clone():
+    """stb-clone <appmap.json> — build-parts decomposition, easy→hard,
+    per-part toolchain + acceptance."""
+    _run_script("clone.py")
+
+
+def scaffold():
+    """stb-scaffold <appmap.json> [plan.json] — compilable project
+    skeleton from the app map (GTK3 / Android)."""
+    _run_script("scaffold.py")
+
+
+def verify():
+    """stb-verify <appmap.json> <plan.json> [--uimap F | --see --app N] —
+    round-trip grader: See(clone) vs original app map."""
+    _run_script("verify.py")
+
+
+def see_native():
+    """stb-see-native --app NAME — See phase for Linux desktop apps
+    (AT-SPI/X11). Needs system python3 with pyatspi."""
+    _run_script("see_native.py")
+
+
+def bridge_native():
+    """stb-bridge-native <uimap.json> --source DIR [--ext-dep DIR]… —
+    bridge native desktop uimap to source/ext-dep evidence."""
+    _run_script("bridge_native.py")
