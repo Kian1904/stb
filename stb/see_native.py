@@ -41,7 +41,7 @@ import pyatspi  # noqa: E402  (needs DISPLAY env set first)
 ACTION_ROLES = {
     "push button", "toggle button", "check box", "radio button", "menu",
     "menu item", "combo box", "page tab", "tool bar push button",
-    "tool bar toggle button", "table cell", "scale",
+    "tool bar toggle button", "table cell", "scale", "slider",
 }
 SKIP_ROLES = {"application", "desktop frame", "frame", "window", "dialog",
               "filler", "panel", "root pane", "layered pane", "separator"}
@@ -270,8 +270,11 @@ class NativeTraverser:
     def interactables(self, elements):
         out = []
         for e in elements:
-            if e["role"] in ACTION_ROLES and e.get("pos") and e["name"]:
-                key = f"{e['role']}:{e['name']}"
+            if e["role"] in ACTION_ROLES and e.get("pos"):
+                name = e.get("name") or ""
+                # nameless sliders/scalers (e.g. volume/double-click speed)
+                # get a positional key so they're still tryable once each.
+                key = f"{e['role']}:{name}" if name else f"{e['role']}:{e['pos'][0]},{e['pos'][1]}"
                 out.append((key, e))
         return out
 
