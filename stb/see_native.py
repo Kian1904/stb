@@ -368,7 +368,10 @@ class NativeTraverser:
             self.click_center(el["pos"])
             taps += 1
             self.total_taps = taps
-            time.sleep(1.2)
+            # Page-tab switches swap whole notebook pages — GTK needs a
+            # beat to expose the new page's widgets over AT-SPI.
+            settle = 2.5 if el["role"] == "page tab" else 1.2
+            time.sleep(settle)
             after = self.capture_screen(register=True)
             if after and after[0] != before[0]:
                 self.log(f"  -> new screen {after[0]} "

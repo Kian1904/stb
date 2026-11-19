@@ -175,11 +175,7 @@ def screen_page_ui(s, panel_prefix):
     """A GtkBox page holding the screen's non-menu widgets."""
     lines = []
     grid_id = ident(f"grid_{s['id']}", "g")
-    lines.append(f'        <child><object class="GtkScrolledWindow">'
-                 f'<property name="visible">True</property>'
-                 f'<child><object class="GtkViewport">'
-                 f'<property name="visible">True</property>'
-                 f'<child><object class="GtkBox"><property name="visible">'
+    lines.append(f'        <child><object class="GtkBox"><property name="visible">'
                  f'True</property><property name="orientation">vertical'
                  f'</property><property name="spacing">6</property>'
                  f'<property name="margin">12</property>')
@@ -227,8 +223,7 @@ def screen_page_ui(s, panel_prefix):
                 f'<property name="xalign">0</property>'
                 f'<property name="label">{esc(label)}</property>'
                 f'</object></child>')
-    lines.append('        </object></child></object></child></object>'
-                 '</child>')
+    lines.append('        </object></child>')
     return "\n".join(lines), len(seen)
 
 
@@ -261,12 +256,16 @@ def gen_gtk_ui(appmap, max_screens):
               '<property name="visible">True</property>'
               '<property name="hexpand">True</property>'
               '<property name="vexpand">True</property>')
-    for s in screens:
+    for idx, s in enumerate(screens):
         title = s["name"]["title"] or s["name"]["base"]
         page, n = screen_page_ui(s, "p")
         ui.append(f'<child><object class="GtkBox"><property name="visible">'
                   f'True</property><property name="orientation">vertical'
-                  f'</property>{page}</object></child>')
+                  f'</property>{page}</object></child>'
+                  f'<child type="tab"><object class="GtkLabel" id="tab_{idx}">'
+                  f'<property name="visible">True</property>'
+                  f'<property name="label" translatable="no">Screen {idx}: '
+                  f'{esc(title[:28])}</property></object></child>')
     ui.append('</object></child>')
 
     # ---- statusbar
@@ -521,6 +520,104 @@ act_confirm_dialog (const char *title, const char *text)
   say ("dialog: %s -> %s", title, r == GTK_RESPONSE_YES ? "yes" : "no");
 }
 
+static void
+act_find_dialog (void)
+{
+  GtkWidget *dlg, *entry, *box;
+  const char *text;
+  GtkTextBuffer *buf;
+  GtkTextIter iter, match_s, match_e;
+  GtkTextView *view = current_view ();
+
+  dlg = gtk_dialog_new_with_buttons (
+      "Find", GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (notebook))),
+      GTK_DIALOG_MODAL, "_Cancel", GTK_RESPONSE_CANCEL,
+      "_Find", GTK_RESPONSE_ACCEPT, NULL);
+  box = gtk_dialog_get_content_area (GTK_DIALOG (dlg));
+  entry = gtk_entry_new ();
+  gtk_entry_set_placeholder_text (GTK_ENTRY (entry), "Search text");
+  gtk_container_add (GTK_CONTAINER (box), entry);
+  gtk_widget_show_all (dlg);
+  if (gtk_dialog_run (GTK_DIALOG (dlg)) == GTK_RESPONSE_ACCEPT)
+    {
+      text = gtk_entry_get_text (GTK_ENTRY (entry));
+      if (view && text && *text)
+        {
+          buf = gtk_text_view_get_buffer (view);
+          gtk_text_buffer_get_start_iter (buf, &iter);
+          if (gtk_text_iter_forward_search (&iter, text, 0,
+                                            &match_s, &match_e, NULL))
+            {
+              gtk_text_buffer_select_range (buf, &match_s, &match_e);
+              say ("find: hit");
+            }
+          else
+            say ("find: no match");
+        }
+      else
+        say ("find: %s", text ? text : "");
+    }
+  else
+    say ("dialog: find -> cancel");
+  gtk_widget_destroy (dlg);
+}
+
+static void
+act_goto_dialog (void)
+{
+  GtkWidget *dlg, *entry, *box;
+  const char *text;
+  GtkTextView *view = current_view ();
+  GtkTextBuffer *buf;
+  GtkTextIter iter;
+  int line;
+
+  dlg = gtk_dialog_new_with_buttons (
+      "Go to Line", GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (notebook))),
+      GTK_DIALOG_MODAL, "_Cancel", GTK_RESPONSE_CANCEL,
+      "_Go", GTK_RESPONSE_ACCEPT, NULL);
+  box = gtk_dialog_get_content_area (GTK_DIALOG (dlg));
+  entry = gtk_entry_new ();
+  gtk_entry_set_placeholder_text (GTK_ENTRY (entry), "Line number");
+  gtk_container_add (GTK_CONTAINER (box), entry);
+  gtk_widget_show_all (dlg);
+  if (gtk_dialog_run (GTK_DIALOG (dlg)) == GTK_RESPONSE_ACCEPT)
+    {
+      text = gtk_entry_get_text (GTK_ENTRY (entry));
+      line = atoi (text ? text : "0");
+      if (view && line > 0)
+        {
+          buf = gtk_text_view_get_buffer (view);
+          gtk_text_buffer_get_iter_at_line (buf, &iter, line - 1);
+          gtk_text_buffer_place_cursor (buf, &iter);
+          say ("goto: line %d", line);
+        }
+      else
+        say ("goto: %s", text ? text : "");
+    }
+  else
+    say ("dialog: goto -> cancel");
+  gtk_widget_destroy (dlg);
+}
+
+static void
+act_font_dialog (void)
+{
+  GtkWidget *dlg;
+  char *title;
+  dlg = gtk_font_chooser_dialog_new (
+      "Select Font", GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (notebook))));
+  if (gtk_dialog_run (GTK_DIALOG (dlg)) == GTK_RESPONSE_OK)
+    {
+      title = gtk_font_chooser_get_font (GTK_FONT_CHOOSER (dlg));
+      say ("font: %s", title ? title : "?");
+      g_free (title);
+    }
+  else
+    say ("dialog: font -> cancel");
+  gtk_widget_destroy (dlg);
+}
+
 /* ---- dispatcher ------------------------------------------------------------ */
 
 void
@@ -547,6 +644,12 @@ stb_on_widget (GtkWidget *w, gpointer data)
     act_new_tab ();
   else if (strstr (id, "about"))
     act_confirm_dialog ("About", "STB clone (generated from an appmap)");
+  else if (strstr (id, "find") || strstr (id, "replace"))
+    act_find_dialog ();
+  else if (strstr (id, "goto") || strstr (id, "go to"))
+    act_goto_dialog ();
+  else if (strstr (id, "font") || strstr (id, "color scheme"))
+    act_font_dialog ();
   else if (strstr (id, "undo") || strstr (id, "redo") ||
            strstr (id, "cut") || strstr (id, "copy") ||
            strstr (id, "paste") || strstr (id, "select"))
@@ -591,6 +694,18 @@ on_activate (GtkApplication *application, gpointer data)
   gtk_builder_connect_signals (b, NULL);
   status = GTK_STATUSBAR (gtk_builder_get_object (b, "statusbar"));
   notebook = GTK_NOTEBOOK (gtk_builder_get_object (b, "notebook"));
+  /* Ensure every appmap page has a visible, a11y-readable tab label. */
+  {
+    int npages = gtk_notebook_get_n_pages (notebook);
+    int i;
+    for (i = 0; i < npages; i++)
+      {
+        GtkWidget *pg = gtk_notebook_get_nth_page (notebook, i);
+        char lbl[64];
+        g_snprintf (lbl, sizeof lbl, "Screen %d", i);
+        gtk_notebook_set_tab_label_text (notebook, pg, lbl);
+      }
+  }
   win = GTK_WIDGET (gtk_builder_get_object (b, "main_window"));
   gtk_window_set_application (GTK_WINDOW (win), application);
   gtk_widget_show (win);
