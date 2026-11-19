@@ -237,11 +237,15 @@ def read_c_dialog_suffix():
 
 
 def gtk_dialog_triggers(appmap):
-    """(label, dialog_title) for flows whose target screen is a dialog.
+    """(label, dialog_title) for flows whose click should open a dialog in
+    the clone.
 
     Original titles carry a bracketed suffix added by see_native when a
-    modal dialog is open (e.g. "tmp - Thunar [Properties]"), so those flows
-    are exactly the ones whose click should pop a dialog in the clone.
+    modal dialog is open (e.g. "tmp - Thunar [Properties]"). Those flows get
+    the bracketed dialog title. Every other flow trigger gets a generic
+    "action: <label>" dialog so that clicking it *always* produces a real
+    screen change in the clone (honest skeleton behavior instead of a no-op
+    say()).
     """
     out = []
     screens = appmap.get("screens", [])
@@ -252,9 +256,12 @@ def gtk_dialog_triggers(appmap):
         if not trig or not isinstance(tgt, int) or tgt >= len(screens):
             continue
         title = (screens[tgt].get("name") or {}).get("title") or ""
-        if "[" not in title:
-            continue
-        dlg = title[title.find("["):]
+        if "[" in title:
+            dlg = title[title.find("["):]
+        else:
+            # non-dialog navigation: honest info dialog naming the action
+            base = title or "(clone)"
+            dlg = "action: %s on %s" % (trig, base)
         key = ((trig or "").strip().casefold().replace("_", ""), dlg)
         if key in seen:
             continue
