@@ -41,7 +41,7 @@ import pyatspi  # noqa: E402  (needs DISPLAY env set first)
 ACTION_ROLES = {
     "push button", "toggle button", "check box", "radio button", "menu",
     "menu item", "combo box", "page tab", "tool bar push button",
-    "tool bar toggle button", "table cell",
+    "tool bar toggle button", "table cell", "scale",
 }
 SKIP_ROLES = {"application", "desktop frame", "frame", "window", "dialog",
               "filler", "panel", "root pane", "layered pane", "separator"}
