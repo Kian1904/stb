@@ -96,3 +96,15 @@ def canvas():
     """stb-canvas <target> [--max-taps N --out uimap.json] —
     screenshot-diff navigation for Flutter/canvas apps (no AT-SPI nodes)."""
     _run_script("canvas_mode.py")
+
+
+def see_native_win():
+    """stb-see-native-win --app NAME — See phase for Windows desktop apps
+    via UIA (pywinauto). NOT TESTED on this Linux VM; verify on Windows."""
+    _run_script("see_native_win.py")
+
+
+def see_native_mac():
+    """stb-see-native-mac --app NAME — See phase for macOS desktop apps
+    via Accessibility API (pyobjc). NOT TESTED on this Linux VM; verify on Mac."""
+    _run_script("see_native_mac.py")

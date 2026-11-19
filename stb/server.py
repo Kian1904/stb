@@ -235,6 +235,40 @@ def stb_canvas(package: str, max_taps: int = 60, out: str = "") -> str:
     tail = "\n".join((r.stdout or "").splitlines()[-12:])
     return f"exit={r.returncode}\n{tail}\nCanvas uimap: {out_path}"
 
+@mcp.tool(description="Traverse a Windows desktop app via UIA (pywinauto). "
+          "Args: app (window title substring), max_actions, out. "
+          "Writes uimap JSON compatible with the STB pipeline. "
+          "NOT TESTED on Linux — run on Windows.")
+def stb_see_win(app: str, max_actions: int = 25, out: str = "") -> str:
+    script = os.path.join(STB_DIR, "see_native_win.py")
+    if not os.path.exists(script):
+        return f"ERROR: {script} not found"
+    out_path = out or os.path.join(RUN_DIR, f"see_win_{app.replace(' ', '_')}.json")
+    r = subprocess.run([sys.executable, script, "--app", app,
+                        "--max-actions", str(max_actions),
+                        "--out", out_path],
+                       capture_output=True, timeout=300,
+                       text=True, errors="replace")
+    tail = "\n".join((r.stdout or "").splitlines()[-12:])
+    return f"exit={r.returncode}\n{tail}\nWindows uimap: {out_path}"
+
+@mcp.tool(description="Traverse a macOS desktop app via Accessibility API (pyobjc). "
+          "Args: app (window title substring), max_actions, out. "
+          "Writes uimap JSON compatible with the STB pipeline. "
+          "NOT TESTED on Linux — run on macOS.")
+def stb_see_mac(app: str, max_actions: int = 25, out: str = "") -> str:
+    script = os.path.join(STB_DIR, "see_native_mac.py")
+    if not os.path.exists(script):
+        return f"ERROR: {script} not found"
+    out_path = out or os.path.join(RUN_DIR, f"see_mac_{app.replace(' ', '_')}.json")
+    r = subprocess.run([sys.executable, script, "--app", app,
+                        "--max-actions", str(max_actions),
+                        "--out", out_path],
+                       capture_output=True, timeout=300,
+                       text=True, errors="replace")
+    tail = "\n".join((r.stdout or "").splitlines()[-12:])
+    return f"exit={r.returncode}\n{tail}\nmacOS uimap: {out_path}"
+
 @mcp.tool(description="Dump the CURRENT screen as structured UI elements "
                           "(class, text, content-desc, resource-id, bounds). "
                           "Works even on FLAG_SECURE apps.")
