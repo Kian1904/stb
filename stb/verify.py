@@ -43,6 +43,14 @@ def collect_clone_labels(clone_uimap):
         got = set()
         for el in s.get("elements", []):
             lab = el.get("name") or el.get("label") or el.get("text")
+            if el.get("role") == "page tab" and lab:
+                # Clone tabs are titled "Screen N: <original title>" — also
+                # register the bare title so must_see entries match.
+                title = lab.split(": ", 1)[1] if ": " in lab else lab
+                n2 = norm(title)
+                if n2:
+                    labels.add(n2)
+                    got.add(n2)
             n = norm(lab)
             if n:
                 labels.add(n)
