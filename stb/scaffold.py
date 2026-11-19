@@ -227,6 +227,59 @@ def screen_page_ui(s, panel_prefix):
     return "\n".join(lines), len(seen)
 
 
+def read_c_dialog_suffix():
+    """C code (dialog action + trigger matcher) shipped beside scaffold.py."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "dialog_triggers.c")
+    if os.path.exists(path):
+        return open(path).read()
+    return ""
+
+
+def gtk_dialog_triggers(appmap):
+    """(label, dialog_title) for flows whose target screen is a dialog.
+
+    Original titles carry a bracketed suffix added by see_native when a
+    modal dialog is open (e.g. "tmp - Thunar [Properties]"), so those flows
+    are exactly the ones whose click should pop a dialog in the clone.
+    """
+    out = []
+    screens = appmap.get("screens", [])
+    seen = set()
+    for f in appmap.get("flows", []):
+        tgt = f.get("to")
+        trig = (f.get("trigger") or {}).get("label") or ""
+        if not trig or not isinstance(tgt, int) or tgt >= len(screens):
+            continue
+        title = (screens[tgt].get("name") or {}).get("title") or ""
+        if "[" not in title:
+            continue
+        dlg = title[title.find("["):]
+        key = ((trig or "").strip().casefold().replace("_", ""), dlg)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((trig, dlg))
+    return out
+
+
+_DIALOG_C_TEMPLATE = read_c_dialog_suffix()
+
+
+def c_dialog_table(triggers):
+    if not triggers:
+        return ""
+    lines = ["", "/* ---- generated appmap dialog triggers ---- */", ""]
+    lines.append("struct stb_dlg_trig { const char *label; const char *dlg; };")
+    lines.append("static const struct stb_dlg_trig stb_dialog_triggers[] = {")
+    for lab, dlg in triggers:
+        e1 = lab.replace("\\", "\\\\").replace('"', '\\"')
+        e2 = dlg.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append('    { "%s", "%s" },' % (e1, e2))
+    lines.append("};")
+    return "\n".join(lines) + "\n" + _DIALOG_C_TEMPLATE
+
+
 def gen_gtk_ui(appmap, max_screens):
     screens = appmap["screens"][:max_screens]
     menus = collect_menubar(appmap["screens"])
@@ -618,6 +671,10 @@ act_font_dialog (void)
   gtk_widget_destroy (dlg);
 }
 
+/* ---- appmap dialog triggers (prototypes; table is generated below) --------- */
+static gboolean stb_try_dialog_trigger (const char *id);
+static void act_appmap_dialog (const char *dlg_title);
+
 /* ---- dispatcher ------------------------------------------------------------ */
 
 void
@@ -654,6 +711,8 @@ stb_on_widget (GtkWidget *w, gpointer data)
            strstr (id, "cut") || strstr (id, "copy") ||
            strstr (id, "paste") || strstr (id, "select"))
     act_edit_action (w);
+  else if (stb_try_dialog_trigger (id))
+    ; /* dialog opened from the original appmap flow */
   else
     say ("action: %s", id);
 }
@@ -768,8 +827,9 @@ def scaffold_gtk(appmap, plan, out_dir, max_screens):
     ui = gen_gtk_ui(appmap, max_screens)
     with open(os.path.join(out_dir, "data", "app.ui"), "w") as f:
         f.write(ui)
+    dialog_triggers = gtk_dialog_triggers(appmap)
     with open(os.path.join(out_dir, "src", "main.c"), "w") as f:
-        f.write(MAIN_C)
+        f.write(MAIN_C + c_dialog_table(dialog_triggers))
     with open(os.path.join(out_dir, "meson.build"), "w") as f:
         f.write(MESON_BUILD)
 

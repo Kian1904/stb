@@ -41,7 +41,7 @@ import pyatspi  # noqa: E402  (needs DISPLAY env set first)
 ACTION_ROLES = {
     "push button", "toggle button", "check box", "radio button", "menu",
     "menu item", "combo box", "page tab", "tool bar push button",
-    "tool bar toggle button",
+    "tool bar toggle button", "table cell",
 }
 SKIP_ROLES = {"application", "desktop frame", "frame", "window", "dialog",
               "filler", "panel", "root pane", "layered pane", "separator"}
@@ -64,10 +64,22 @@ class ATSPIWalker:
     def find_app(self):
         desktop = pyatspi.Registry.getDesktop(0)
         apps = list(desktop)
+        def has_frames(a):
+            try:
+                return len(list(a)) > 0
+            except Exception:
+                return False
+
         if self.hint:
-            for a in apps:
-                if self.hint in (a.name or "").lower():
-                    return a
+            matches = [a for a in apps
+                       if self.hint in (a.name or "").lower()]
+            # Prefer an application that actually exposes windows — some
+            # toolkits register a second, empty application node.
+            alive = [a for a in matches if has_frames(a)]
+            if alive:
+                return alive[0]
+            if matches:
+                return matches[0]
         return apps[0] if apps else None
 
     def elements(self, app, max_depth=8):
@@ -143,6 +155,16 @@ class NativeTraverser:
     def log(self, msg):
         print(msg)
         self.events.append(msg)
+
+    @staticmethod
+    def _destroys_app(el):
+        """Menu items that close the app/window — never click those mid-run."""
+        name = (el.get("name") or "").strip().lower()
+        if not name:
+            return False
+        fatal = ("quit", "close all", "close window", "close tab",
+                 "close all windows", "exit", "log out", "shutdown")
+        return any(f in name for f in fatal)
 
     @staticmethod
     def _spawns_blank_window(el):
@@ -305,7 +327,8 @@ class NativeTraverser:
                      for k2, e2 in self.interactables(opened[2])
                      if e2["role"] == "menu item" and e2.get("pos")]
             nxt = [(k2, e2) for k2, e2 in items
-                   if k2 not in done_items]
+                   if k2 not in done_items
+                   and not self._destroys_app(e2)]
             if not nxt:
                 escape()
                 menu_cursor += 1
@@ -366,7 +389,8 @@ class NativeTraverser:
                     if (sig, k) not in self.tried
                     and e["role"] != "menu item"
                     and not (self._spawns_blank_window(e)
-                             and k in blank_seen)]
+                             and k in blank_seen)
+                    and not self._destroys_app(e)]
             if not todo:
                 if relaunches < 4:
                     relaunches += 1
