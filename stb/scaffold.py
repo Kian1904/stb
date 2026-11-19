@@ -694,15 +694,22 @@ on_activate (GtkApplication *application, gpointer data)
   gtk_builder_connect_signals (b, NULL);
   status = GTK_STATUSBAR (gtk_builder_get_object (b, "statusbar"));
   notebook = GTK_NOTEBOOK (gtk_builder_get_object (b, "notebook"));
-  /* Ensure every appmap page has a visible, a11y-readable tab label. */
+  /* Ensure every appmap page has a visible, a11y-readable tab label.
+   * Keep the builder-provided "Screen N: <title>" if present; the runtime
+   * set_tab_label_text pass is only a fallback for empty labels. */
   {
     int npages = gtk_notebook_get_n_pages (notebook);
     int i;
     for (i = 0; i < npages; i++)
       {
         GtkWidget *pg = gtk_notebook_get_nth_page (notebook, i);
-        char lbl[64];
-        g_snprintf (lbl, sizeof lbl, "Screen %d", i);
+        GtkWidget *tab = gtk_notebook_get_tab_label (notebook, pg);
+        const char *cur = tab ? gtk_label_get_text (GTK_LABEL (tab)) : NULL;
+        char lbl[96];
+        if (cur && *cur)
+          g_snprintf (lbl, sizeof lbl, "%s", cur);
+        else
+          g_snprintf (lbl, sizeof lbl, "Screen %d", i);
         gtk_notebook_set_tab_label_text (notebook, pg, lbl);
       }
   }

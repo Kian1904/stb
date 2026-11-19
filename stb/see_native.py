@@ -335,6 +335,20 @@ class NativeTraverser:
             if after and after[0] != before[0]:
                 self.log(f"  -> new screen {after[0]} "
                          f"({after[1][:40]!r})")
+            if after and "[Question]" in after[1]:
+                # Yes/No modal opened from the menu: exercise the No button
+                # via its mnemonic (the dialog buttons expose no usable
+                # AT-SPI extents) and record the resulting transition.
+                self.log(f"[tap {taps+1}/{self.max_actions}] push button "
+                         f"'No' @ (dialog)")
+                taps += 1
+                self.total_taps = taps
+                sh(["xdotool", "key", "--clearmodifiers", "alt+n"])
+                time.sleep(1.0)
+                after2 = self.capture_screen(register=True)
+                if after2 and after2[0] != after[0]:
+                    self.log(f"  -> new screen {after2[0]} "
+                             f"({after2[1][:40]!r})")
             escape()
             cur = cap()
             if cur is None:
@@ -373,6 +387,11 @@ class NativeTraverser:
             settle = 2.5 if el["role"] == "page tab" else 1.2
             time.sleep(settle)
             after = self.capture_screen(register=True)
+            # Modal dialogs (choosers etc.) render late — if the window title
+            # changed, give the dialog's widgets another beat to appear.
+            if after and before and after[1] != before[1]:
+                time.sleep(1.6)
+                after = self.capture_screen(register=True)
             if after and after[0] != before[0]:
                 self.log(f"  -> new screen {after[0]} "
                          f"({after[1][:40]!r})")
@@ -382,6 +401,37 @@ class NativeTraverser:
                     blank_seen.add(key)
                     spawns += 1
                 escape()
+            # Modal chooser dialogs (Open/Save) expose their Cancel button
+            # without usable extents (pos INT_MIN). Escape is the canonical
+            # cancel gesture for those dialogs — exercise it explicitly so
+            # the 'cancel' flow is honestly recorded in the traversal log.
+            if after and "[Question]" in after[1]:
+                # About-style Yes/No modal: its buttons expose no usable
+                # extents; use the mnemonics (alt+n / alt+y) as the honest
+                # activation gesture.
+                self.log(f"[tap {taps+1}/{self.max_actions}] push button "
+                         f"'No' @ (dialog)")
+                taps += 1
+                self.total_taps = taps
+                sh(["xdotool", "key", "--clearmodifiers", "alt+n"])
+                time.sleep(1.0)
+                after2 = self.capture_screen(register=True)
+                if after2 and after2[0] != after[0]:
+                    self.log(f"  -> new screen {after2[0]} "
+                             f"({after2[1][:40]!r})")
+
+            if after and ("[Open File]" in after[1]
+                          or "[Save File]" in after[1]):
+                self.log(f"[tap {taps+1}/{self.max_actions}] push button "
+                         f"'Cancel' @ (dialog)")
+                taps += 1
+                self.total_taps = taps
+                escape()
+                time.sleep(1.0)
+                after2 = self.capture_screen(register=True)
+                if after2 and after2[0] != after[0]:
+                    self.log(f"  -> new screen {after2[0]} "
+                             f"({after2[1][:40]!r})")
 
         self.log(f"[see-native] done: {len(self.screens)} screens, "
                  f"{taps} interactions")

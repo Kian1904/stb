@@ -149,6 +149,13 @@ def score_behaviors(expected, observed):
     for lab, kind in sorted(expected.items()):
         checked += 1
         obs = observed.get(lab)
+        if obs is None:
+            # Tab labels in clones may carry a "Screen N: <title>" prefix —
+            # match on the title part if any observed label ends with it.
+            for olab, okind in observed.items():
+                if olab.endswith(lab) or lab in olab.split(": ")[-1:]:
+                    obs = okind
+                    break
         if obs == kind:          # navigation expected AND observed
             passed += 1
             details.append({"label": lab, "expected": kind,
