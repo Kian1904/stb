@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 
 from PIL import Image, ImageChops, ImageStat
 
@@ -35,7 +36,10 @@ ADB_SERIAL = os.environ.get("STB_ADB_SERIAL", "localhost:5555")
 GRID_COLS = 8
 GRID_ROWS = 6
 DIFF_THRESHOLD = 400.0   # mean abs pixel difference to count as "screen changed"
-TAP_SETTLE = 0.8         # seconds to wait after a tap before screenshoting
+TAP_SETTLE = 1.0         # seconds to wait after a tap before screenshoting
+SWIPE_SETTLE = 1.5       # seconds to wait after a swipe before screenshoting
+MAX_CONSECUTIVE_DEAD = 12  # stop after N taps that change nothing
+SCREEN_DIR = os.path.join(tempfile.gettempdir(), "stb_canvas_screens")
 
 
 def _run(cmd, timeout=30):
@@ -122,18 +126,24 @@ def canvas_traverse(package, max_taps):
     taps = 0
     screen_idx = 0
 
-    def capture_and_register(title_prefix):
+    def capture_and_register(title_prefix, tap_xy=None):
         nonlocal screen_idx
+        os.makedirs(SCREEN_DIR, exist_ok=True)
         img = screenshot_png()
+        path = os.path.join(SCREEN_DIR, f"{package}_screen{len(screens)}.png")
+        img.save(path)
         els = [{"role": "canvas_tap",
                 "name": f"{title_prefix} screen",
                 "pos": [w // 2, h // 2]}]
+        if tap_xy:
+            els.append({"role": "canvas_tap", "name": f"canvas@{tap_xy[0]},{tap_xy[1]}",
+                        "pos": list(tap_xy)})
         sig = sig_of(els)
         screen = {
             "sig": sig,
             "title": title_prefix,
             "elements": els,
-            "screenshot": None,  # caller may embed separately
+            "screenshot": path,
         }
         screens.append(screen)
         screen_idx += 1
@@ -142,7 +152,8 @@ def canvas_traverse(package, max_taps):
     cur_sig, cur_img = capture_and_register(f"{package} screen 0")
 
     i = 0
-    while taps < max_taps and i < len(pts):
+    dead = 0
+    while taps < max_taps and i < len(pts) and dead < MAX_CONSECUTIVE_DEAD:
         x, y = pts[i]
         i += 1
         key = f"{x},{y}"
@@ -156,20 +167,41 @@ def canvas_traverse(package, max_taps):
         score = diff_score(cur_img, after)
         if score > DIFF_THRESHOLD:
             # new screen
-            new_sig, cur_img = capture_and_register(f"{package} screen {len(screens)}")
+            new_sig, cur_img = capture_and_register(
+                f"{package} screen {len(screens)}", tap_xy=(x, y))
             els = [{"role": "canvas_tap", "name": f"canvas@{x},{y}",
                     "pos": [x, y]}]
             # mark this tap as interactive on the NEW screen
             screens[-1]["elements"] = els
             cur_sig = new_sig
-        # else: no change, keep cur_img
+            dead = 0
+        else:
+            dead += 1
+            # dead zone: try a swipe to escape static screen
+            if dead >= MAX_CONSECUTIVE_DEAD and taps < max_taps:
+                _run(["adb", "-s", ADB_SERIAL, "shell", "input",
+                      "swipe", str(w // 2), str(int(h * 0.8)),
+                      str(w // 2), str(int(h * 0.3))], 20)
+                time.sleep(SWIPE_SETTLE)
+                after = screenshot_png()
+                score = diff_score(cur_img, after)
+                if score > DIFF_THRESHOLD:
+                    new_sig, cur_img = capture_and_register(
+                        f"{package} screen {len(screens)}", tap_xy=None)
+                    screens[-1]["elements"] = [{"role": "canvas_tap",
+                                                "name": "swipe escape",
+                                                "pos": [w // 2, h // 2]}]
+                    cur_sig = new_sig
+                    dead = 0
+                else:
+                    break  # truly stuck
     return {
         "package": package,
         "platform": "android-canvas",
         "screen_count": len(screens),
         "taps_performed": taps,
         "screens": screens,
-        "generated": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "generated": datetime.now(timezone.utc).isoformat() + "Z",
     }
 
 
