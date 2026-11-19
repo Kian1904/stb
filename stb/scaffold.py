@@ -960,7 +960,8 @@ android {{
 """
 
 MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="{pkg}">
     <application android:label="{title}">
         <activity android:name=".MainActivity"
                   android:exported="true">
@@ -1082,6 +1083,7 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
     with open(os.path.join(root, "app", "src", "main",
                            "AndroidManifest.xml"), "w") as f:
         f.write(MANIFEST.format(title=esc(title or "stb clone"),
+                                pkg=pkg,
                                 extra="\n".join(extra)))
 
     parts = plan.get("build_parts", []) if plan else []
