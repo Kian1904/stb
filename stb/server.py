@@ -218,6 +218,23 @@ def stb_see(package: str, max_screens: int = 15, max_taps: int = 40) -> str:
     return f"exit={r.returncode}\n{tail}\n{(r.stderr or '')[-300:] if r.returncode else ''}"
 
 
+@mcp.tool(description="Traverse a Flutter/canvas app (or any app with zero AT-SPI/uiautomator nodes) "
+          "via screenshot-diff: tap a grid of coordinates, screenshot before/after each "
+          "tap, and register a new screen whenever the frame changes. Writes uimap JSON "
+          "compatible with the rest of the STB pipeline. Args: package, max_taps, out.")
+def stb_canvas(package: str, max_taps: int = 60, out: str = "") -> str:
+    script = os.path.join(STB_DIR, "canvas_mode.py")
+    if not os.path.exists(script):
+        return f"ERROR: {script} not found"
+    out_path = out or os.path.join(RUN_DIR, f"canvas_{package.replace('.', '_')}.json")
+    r = subprocess.run([sys.executable, script, package,
+                        "--max-taps", str(max_taps),
+                        "--out", out_path],
+                       capture_output=True, timeout=900,
+                       text=True, errors="replace")
+    tail = "\n".join((r.stdout or "").splitlines()[-12:])
+    return f"exit={r.returncode}\n{tail}\nCanvas uimap: {out_path}"
+
 @mcp.tool(description="Dump the CURRENT screen as structured UI elements "
                           "(class, text, content-desc, resource-id, bounds). "
                           "Works even on FLAG_SECURE apps.")

@@ -90,3 +90,9 @@ def bridge_native():
     """stb-bridge-native <uimap.json> --source DIR [--ext-dep DIR]… —
     bridge native desktop uimap to source/ext-dep evidence."""
     _run_script("bridge_native.py")
+
+
+def canvas():
+    """stb-canvas <target> [--max-taps N --out uimap.json] —
+    screenshot-diff navigation for Flutter/canvas apps (no AT-SPI nodes)."""
+    _run_script("canvas_mode.py")
