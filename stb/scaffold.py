@@ -87,7 +87,7 @@ def collect_menubar(screens):
         bar_y = None  # y coordinate of the menu bar row
         for el in s["elements"]:
             role = (el.get("role") or "").lower()
-            label = (el.get("label") or "").strip()
+            label = (el.get("label") or el.get("name") or "").strip()
             if not label or "menu bar" in role:
                 continue
             y = el.get("pos")[1] if el.get("pos") else None
@@ -224,6 +224,16 @@ def screen_page_ui(s, panel_prefix):
                 f'<property name="label">{esc(label)}</property>'
                 f'</object></child>')
     lines.append('        </object></child>')
+
+    # ---- Preferences button on every page (part 2: settings & toggles) ----
+    lines.append(
+        f'        <child><object class="GtkButton" id="btn_preferences_{s["id"]}">'
+        f'<property name="visible">True</property>'
+        f'<property name="label">Preferences...</property>'
+        f'<signal name="clicked" handler="stb_on_widget" '
+        f'object="btn_preferences_{s["id"]}"/>'
+        f'</object></child>')
+
     return "\n".join(lines), len(seen)
 
 
@@ -311,6 +321,13 @@ def gen_gtk_ui(appmap, max_screens):
             emit_menu(g, 0, ui, cnt)
         ui.append('</object></child>')
 
+    # ---- always-visible Preferences button (part 2: settings & toggles) ----
+    ui.append('<child><object class="GtkButton" id="btn_preferences">')
+    ui.append('<property name="visible">True</property>')
+    ui.append('<property name="label">Preferences...</property>')
+    ui.append('<signal name="clicked" handler="stb_on_widget" object="btn_preferences"/>')
+    ui.append('</object></child>')
+
     # ---- notebook: one page per observed screen
     ui.append('<child><object class="GtkNotebook" id="notebook">'
               '<property name="visible">True</property>'
@@ -356,6 +373,8 @@ static GtkNotebook *notebook = NULL;
 static GtkApplication *app = NULL;
 static int blank_tabs = 0;
 static guint ctx = 0;
+
+static void act_save (void);
 
 static void
 say (const char *fmt, ...)
@@ -520,6 +539,12 @@ act_close_tab (void)
 }
 
 static void
+act_save (void)
+{
+  act_save_as ();
+}
+
+static void
 act_quit (void)
 {
   g_application_quit (G_APPLICATION (app));
@@ -678,6 +703,39 @@ act_font_dialog (void)
   gtk_widget_destroy (dlg);
 }
 
+/* ---- part 2: settings dialog --------------------------------------------- */
+
+static void
+act_preferences_dialog (void)
+{
+  GtkWidget *dlg, *box, *label, *combo;
+  dlg = gtk_dialog_new_with_buttons ("Preferences",
+      GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (notebook))),
+      GTK_DIALOG_MODAL, "_Close", GTK_RESPONSE_CLOSE, NULL);
+  box = gtk_dialog_get_content_area (GTK_DIALOG (dlg));
+
+  label = gtk_label_new ("Encoding:");
+  gtk_container_add (GTK_CONTAINER (box), label);
+  combo = gtk_combo_box_text_new ();
+  gtk_combo_box_text_append (GTK_COMBO_BOX_TEXT (combo), NULL, "Default (UTF-8)");
+  gtk_combo_box_text_append (GTK_COMBO_BOX_TEXT (combo), NULL, "ISO-8859-1");
+  gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
+  gtk_container_add (GTK_CONTAINER (box), combo);
+
+  label = gtk_label_new ("Document type:");
+  gtk_container_add (GTK_CONTAINER (box), label);
+  combo = gtk_combo_box_text_new ();
+  gtk_combo_box_text_append (GTK_COMBO_BOX_TEXT (combo), NULL, "Text Files");
+  gtk_combo_box_text_append (GTK_COMBO_BOX_TEXT (combo), NULL, "All Files");
+  gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
+  gtk_container_add (GTK_CONTAINER (box), combo);
+
+  gtk_widget_show_all (dlg);
+  if (gtk_dialog_run (GTK_DIALOG (dlg)) == GTK_RESPONSE_CLOSE)
+    say ("dialog: preferences -> closed");
+  gtk_widget_destroy (dlg);
+}
+
 /* ---- appmap dialog triggers (prototypes; table is generated below) --------- */
 static gboolean stb_try_dialog_trigger (const char *id);
 static void act_appmap_dialog (const char *dlg_title);
@@ -701,7 +759,7 @@ stb_on_widget (GtkWidget *w, gpointer data)
   else if (strstr (id, "save_as"))
     act_save_as ();
   else if (strstr (id, "_save"))
-    say ("save: current tab");
+    act_save ();
   else if (strstr (id, "close_tab") || strstr (id, "_close"))
     act_close_tab ();
   else if (strstr (id, "_new"))
@@ -720,6 +778,8 @@ stb_on_widget (GtkWidget *w, gpointer data)
     act_edit_action (w);
   else if (stb_try_dialog_trigger (id))
     ; /* dialog opened from the original appmap flow */
+  else if (strstr (id, "preferences"))
+    act_preferences_dialog ();
   else
     say ("action: %s", id);
 }
@@ -1029,7 +1089,7 @@ def scaffold_android(appmap, plan, out_dir, max_screens, app_id, title):
         fabs = []
         seen = set()
         for el in s["elements"]:
-            label = (el.get("label") or "").strip()
+            label = (el.get("label") or el.get("name") or "").strip()
             role = (el.get("role") or "").lower()
             if not label or (label, role) in seen:
                 continue

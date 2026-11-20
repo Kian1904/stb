@@ -417,17 +417,51 @@ class NativeTraverser:
             # Modal dialogs (choosers etc.) render late — if the window title
             # changed, give the dialog's widgets another beat to appear.
             if after and before and after[1] != before[1]:
-                time.sleep(1.6)
+                time.sleep(2.5)
                 after = self.capture_screen(register=True)
             if after and after[0] != before[0]:
                 self.log(f"  -> new screen {after[0]} "
                          f"({after[1][:40]!r})")
+                # dialog preferences/combos need more time to expose widgets
+                # over AT-SPI before we close them again
+                time.sleep(1.2)
+                after2 = self.capture_screen(register=True)
+                if after2 and after2[0] != after[0]:
+                    self.log(f"  -> new screen {after2[0]} "
+                             f"({after2[1][:40]!r})")
                 bt = sum(1 for e in before[2] if e["role"] == "page tab")
                 at = sum(1 for e in after[2] if e["role"] == "page tab")
                 if at > bt and self._spawns_blank_window(el):
                     blank_seen.add(key)
                     spawns += 1
                 escape()
+                continue
+            # Dialog opened but window title unchanged (e.g. Preferences):
+            # force-register it as a new screen so its widgets
+            # (combo boxes etc.) are captured in the uimap.
+            dialog_now = [e for e in after[2]
+                          if e["role"] in ("dialog","alert","file chooser")]
+            dialog_before = [e for e in before[2]
+                             if e["role"] in ("dialog","alert","file chooser")]
+            if dialog_now and not dialog_before:
+                sig2, title2, elem2 = self.capture_screen(register=False)
+                if sig2 and sig2 not in self.seen_sigs:
+                    self.seen_sigs.add(sig2)
+                    shot = self.screenshot(
+                        os.path.join(self.out_dir,
+                                     f"nat_{len(self.screens)}.png"))
+                    self.screens.append({
+                        "id": len(self.screens),
+                        "focus": title2,
+                        "sig": sig2,
+                        "elements": elem2,
+                        "screenshot": shot,
+                    })
+                    self.log(f"  -> registered dialog screen "
+                             f"{sig2} ({title2[:40]!r})")
+                escape()
+                continue
+            escape()
             # Modal chooser dialogs (Open/Save) expose their Cancel button
             # without usable extents (pos INT_MIN). Escape is the canonical
             # cancel gesture for those dialogs — exercise it explicitly so
