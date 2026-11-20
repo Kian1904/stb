@@ -284,15 +284,19 @@ _DIALOG_C_TEMPLATE = read_c_dialog_suffix()
 
 
 def c_dialog_table(triggers):
-    if not triggers:
-        return ""
     lines = ["", "/* ---- generated appmap dialog triggers ---- */", ""]
     lines.append("struct stb_dlg_trig { const char *label; const char *dlg; };")
     lines.append("static const struct stb_dlg_trig stb_dialog_triggers[] = {")
-    for lab, dlg in triggers:
-        e1 = lab.replace("\\", "\\\\").replace('"', '\\"')
-        e2 = dlg.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append('    { "%s", "%s" },' % (e1, e2))
+    if not triggers:
+        # Empty table still needs a definition (the dispatcher always calls
+        # stb_try_dialog_trigger); a single NULL sentinel is portable C and
+        # the matcher skips it.
+        lines.append('    { NULL, NULL },')
+    else:
+        for lab, dlg in triggers:
+            e1 = lab.replace("\\", "\\\\").replace('"', '\\"')
+            e2 = dlg.replace("\\", "\\\\").replace('"', '\\"')
+            lines.append('    { "%s", "%s" },' % (e1, e2))
     lines.append("};")
     return "\n".join(lines) + "\n" + _DIALOG_C_TEMPLATE
 
@@ -762,19 +766,7 @@ act_preferences_dialog (void)
   gtk_widget_destroy (dlg);
 }
 
-/* ---- appmap dialog triggers (prototypes; table is generated below) --------- */
-static gboolean stb_try_dialog_trigger (const char *id)
-{
-  (void) id;
-  return FALSE;
-}
-
-static void act_appmap_dialog (const char *dlg_title)
-{
-  (void) dlg_title;
-  say ("dialog: %s (stub)", dlg_title);
-}
-
+/* ---- appmap dialog triggers (table + impl generated below) --------- */
 static gboolean stb_try_dialog_trigger (const char *id);
 static void act_appmap_dialog (const char *dlg_title);
 

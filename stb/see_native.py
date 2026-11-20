@@ -151,6 +151,7 @@ class NativeTraverser:
         self.events = []  # traversal log lines (tap + transitions)
         self._menu_pending = set()  # menus with unclicked items
         self._menu_item_done = set()  # item keys already clicked
+        self._frame_name = None  # active frame title (for window focusing)
 
     def log(self, msg):
         print(msg)
@@ -193,6 +194,32 @@ class NativeTraverser:
             return wid
         return None
 
+    def focus_app(self):
+        """Focus the target app's window before clicking.
+
+        Clicks are delivered to whichever window is top-most at the cursor
+        position, not to the AT-SPI node we enumerated. When a stale dialog
+        (e.g. a leftover Preferences from an earlier run) sits on top, every
+        click lands on the wrong window and the traversal sees zero effect —
+        which is exactly what happened with pavucontrol (its frame title is
+        'Volume Control', not the app name). Activate by frame title first,
+        falling back to the app hint and the WM_CLASS.
+        """
+        candidates = []
+        if getattr(self, "_frame_name", None):
+            candidates.append(self._frame_name)
+        candidates.append(self.hint.title())
+        for name in candidates:
+            wid = self.activate_window(name)
+            if wid:
+                return wid
+        # Last resort: match by WM_CLASS (app hint, lower-cased).
+        out = sh(["xdotool", "search", "--class", self.hint])
+        for wid in out.split():
+            sh(["xdotool", "windowactivate", "--sync", wid])
+            return wid
+        return None
+
     def click_center(self, pos):
         if not pos:
             return False
@@ -224,6 +251,7 @@ class NativeTraverser:
                         dialogs.append(nm)
         except Exception:
             pass
+        self._frame_name = main
         if dialogs:
             return main + " [" + " + ".join(sorted(set(dialogs))) + "]"
         return main
@@ -238,8 +266,17 @@ class NativeTraverser:
         # Menu opens/hover text are noise, not new screens (unlike Android's
         # activity changes). Filter them out so toggling File/Edit does not
         # inflate screen_count.
+        #
+        # Page tabs (notebook) are special: switching the SELECTED tab changes
+        # which widgets are shown/realized, but role:name stays identical for
+        # the tab strip itself. Fold the selected state in so each tab is its
+        # own screen (pavucontrol Playback vs Recording vs Output Devices…),
+        # otherwise a tabbed app looks like one exhausted screen after N tabs.
         stable = [
-            f"{e['role']}:{e['name']}" for e in elements
+            f"{e['role']}:{e['name']}"
+            + (":sel" if e["role"] == "page tab"
+               and "selected" in e.get("states", []) else "")
+            for e in elements
             if e["role"] not in self.TRANSIENT_ROLES
             and "showing" in e.get("states", [])
         ]
@@ -406,6 +443,7 @@ class NativeTraverser:
             self.log(f"[tap {taps+1}/{self.max_actions}] {el['role']} "
                      f"'{el['name'][:40]}' @ {el['pos'][:2]}")
             before = self.capture_screen(register=False)
+            self.focus_app()
             self.click_center(el["pos"])
             taps += 1
             self.total_taps = taps

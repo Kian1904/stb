@@ -39,7 +39,9 @@ stb_try_dialog_trigger (const char *id)
     {
       char *nl = stb_norm_str (stb_dialog_triggers[i].label);
       char *ni = stb_norm_str (id);
-      gboolean hit = (nl && ni && g_strstr_len (ni, -1, nl) != NULL);
+      gboolean hit = (stb_dialog_triggers[i].label
+                      && nl && *nl && ni
+                      && g_strstr_len (ni, -1, nl) != NULL);
       g_free (nl);
       g_free (ni);
       if (hit)
