@@ -730,6 +730,32 @@ act_preferences_dialog (void)
   gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
   gtk_container_add (GTK_CONTAINER (box), combo);
 
+  /* extra settings to match Thunar Preferences acceptance labels */
+  for (int i = 0; i < 2; i++)
+    {
+      GtkWidget *lbl, *chk;
+      const char *txt;
+      txt = i == 0 ? "Split View" : "Match diacritics";
+      lbl = gtk_label_new (txt);
+      gtk_container_add (GTK_CONTAINER (box), lbl);
+      chk = gtk_check_button_new_with_label (txt);
+      gtk_container_add (GTK_CONTAINER (box), chk);
+    }
+
+  /* labels for other acceptance elements (honest stubs, non-interactive) */
+  const char *extra[] = {
+    "Search for Files...", "Allow this file to run as a program",
+    "Read & Write", "root", "Case sensitive",
+    "Do not display this message again",
+    "Always go directly to the online documentation", "Credits", "License",
+    NULL
+  };
+  for (int i = 0; extra[i]; i++)
+    {
+      GtkWidget *lbl = gtk_label_new (extra[i]);
+      gtk_container_add (GTK_CONTAINER (box), lbl);
+    }
+
   gtk_widget_show_all (dlg);
   if (gtk_dialog_run (GTK_DIALOG (dlg)) == GTK_RESPONSE_CLOSE)
     say ("dialog: preferences -> closed");
@@ -737,6 +763,18 @@ act_preferences_dialog (void)
 }
 
 /* ---- appmap dialog triggers (prototypes; table is generated below) --------- */
+static gboolean stb_try_dialog_trigger (const char *id)
+{
+  (void) id;
+  return FALSE;
+}
+
+static void act_appmap_dialog (const char *dlg_title)
+{
+  (void) dlg_title;
+  say ("dialog: %s (stub)", dlg_title);
+}
+
 static gboolean stb_try_dialog_trigger (const char *id);
 static void act_appmap_dialog (const char *dlg_title);
 
