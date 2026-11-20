@@ -134,7 +134,10 @@ def observed_behaviors(clone_uimap, log_text):
                 nxt = cand
                 break
         if "-> new screen " in nxt:
-            behaviors.setdefault(lab, "navigation")
+            # navigation wins: a tab tapped while already selected reads as
+            # 'interactive' on the first tap, but the same tab navigates
+            # when tapped from another page — that is its real behavior.
+            behaviors[lab] = "navigation"
         else:
             behaviors.setdefault(lab, "interactive")
     return behaviors
@@ -160,10 +163,24 @@ def score_behaviors(expected, observed):
         if obs is None:
             # Tab labels in clones may carry a "Screen N: <title>" prefix —
             # match on the title part if any observed label ends with it.
+            # Prefer the LONGEST prefix (page-tab navigation) over a bare
+            # endswith, so a combo box "All Output Devices" cannot shadow the
+            # page tab "Output Devices".
+            best = None
             for olab, okind in observed.items():
-                if olab.endswith(lab) or lab in olab.split(": ")[-1:]:
-                    obs = okind
+                parts = olab.split(": ")
+                if len(parts) >= 2 and parts[-1] == lab:
+                    # tab-prefix match ("Screen 2: Output Devices")
+                    best = okind
                     break
+                if olab == lab:
+                    best = okind
+            if best is None:
+                for olab, okind in observed.items():
+                    if olab.endswith(lab):
+                        best = okind
+                        break
+            obs = best
         if obs == kind:          # navigation expected AND observed
             passed += 1
             details.append({"label": lab, "expected": kind,

@@ -355,13 +355,20 @@ def gen_gtk_ui(appmap, max_screens):
     ui.append('<signal name="clicked" handler="stb_on_widget" object="btn_preferences"/>')
     ui.append('</object></child>')
 
-    # ---- notebook: one page per observed screen
+    # ---- notebook: one page per observed screen, plus a placeholder page
+    # for every page-tab the original shows but see_native never selected
+    # (tabs whose AT-SPI extents were INT_MIN, e.g. pavucontrol's
+    # Configuration — they never became a screen, so no screen page covers
+    # them; the clone still needs the tab so its label is verifiable).
     ui.append('<child><object class="GtkNotebook" id="notebook">'
               '<property name="visible">True</property>'
               '<property name="hexpand">True</property>'
               '<property name="vexpand">True</property>')
-    for idx, s in enumerate(screens):
+    idx = 0
+    covered = set()
+    for s in screens:
         title = screen_tab_label(s)
+        covered.add(title)
         page, n = screen_page_ui(s, "p")
         ui.append(f'<child><object class="GtkBox"><property name="visible">'
                   f'True</property><property name="orientation">vertical'
@@ -370,6 +377,31 @@ def gen_gtk_ui(appmap, max_screens):
                   f'<property name="visible">True</property>'
                   f'<property name="label" translatable="no">Screen {idx}: '
                   f'{esc(title[:28])}</property></object></child>')
+        idx += 1
+    # extra tabs seen in the original but never selected during traversal
+    all_tabs = []
+    for s in screens:
+        for e in s.get("elements", []):
+            if e.get("role") == "page tab":
+                lab = (e.get("label") or e.get("name") or "").strip()
+                if lab and lab not in all_tabs:
+                    all_tabs.append(lab)
+    for lab in all_tabs:
+        if lab in covered:
+            continue
+        covered.add(lab)
+        ui.append(f'<child><object class="GtkBox"><property name="visible">'
+                  f'True</property><property name="orientation">vertical'
+                  f'</property><child><object class="GtkLabel" '
+                  f'id="tab_ph_{idx}"><property name="visible">True</property>'
+                  f'<property name="xalign">0</property>'
+                  f'<property name="label" translatable="no">'
+                  f'{esc(lab)}</property></object></child></object></child>'
+                  f'<child type="tab"><object class="GtkLabel" id="tab_{idx}">'
+                  f'<property name="visible">True</property>'
+                  f'<property name="label" translatable="no">Screen {idx}: '
+                  f'{esc(lab[:28])}</property></object></child>')
+        idx += 1
     ui.append('</object></child>')
 
     # ---- statusbar
