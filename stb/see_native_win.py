@@ -93,15 +93,29 @@ def _role_of(elem: UIAWrapper) -> str:
 
 
 def _name_of(elem: UIAWrapper) -> str:
-    for attr in ("window_text", "name", "texts"):
-        try:
-            v = getattr(elem, attr)()
-            if isinstance(v, list):
-                v = " ".join(v)
-            if v and str(v).strip():
-                return str(v).strip()
-        except Exception:
-            continue
+    # window_text() is the primary UIA name; element_info.name is the raw
+    # UIA Name property; texts() covers legacy MSAA. Return the first
+    # non-empty one.
+    try:
+        v = elem.window_text()
+        if v and str(v).strip():
+            return str(v).strip()
+    except Exception:
+        pass
+    try:
+        v = elem.element_info.name
+        if v and str(v).strip():
+            return str(v).strip()
+    except Exception:
+        pass
+    try:
+        v = elem.texts()
+        if isinstance(v, list):
+            v = " ".join(v)
+        if v and str(v).strip():
+            return str(v).strip()
+    except Exception:
+        pass
     return ""
 
 
@@ -160,13 +174,18 @@ def walk_children(elem, depth=0, max_depth=6):
 
 
 def capture_screen(win, no_shot=False):
-    """Return (sig, title, elements) for the currently focused window."""
+    """Return (sig, title, elements, shot, wrappers) for the focused window.
+
+    `wrappers` maps element key -> UIAWrapper so the caller can click via the
+    UIA Invoke pattern instead of raw screen coordinates.
+    """
     title = ""
     try:
         title = win.window_text() or ""
     except Exception:
         pass
     elements = []
+    wrappers = {}
     seen_keys = set()
     for c, _d in walk_children(win):
         role = _role_of(c)
@@ -181,6 +200,7 @@ def capture_screen(win, no_shot=False):
         if not (x or y) and not name:
             continue
         elements.append({"role": role, "name": name, "pos": [x, y]})
+        wrappers[key] = c
     sig = sig_of(title, elements)
     shot = None
     if not no_shot:
@@ -191,7 +211,7 @@ def capture_screen(win, no_shot=False):
                 img.save(shot)
         except Exception:
             pass
-    return sig, title, elements, shot
+    return sig, title, elements, shot, wrappers
 
 
 def find_app(hint):
@@ -225,6 +245,27 @@ def click_at(x, y):
     ctypes.windll.user32.SetCursorPos(x, y)
     ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # left down
     ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # left up
+
+
+def click_elem(elem: UIAWrapper, x, y):
+    """Click an element. Prefer the UIA Invoke pattern (works even when the
+    window is not in the foreground / on a headless CI runner); fall back to
+    a real mouse event at screen coordinates when Invoke is unavailable.
+    """
+    try:
+        if elem is not None:
+            inv = elem.invoke()
+            if inv is not False:
+                return
+    except Exception:
+        pass
+    try:
+        if elem is not None:
+            elem.click_input()
+            return
+    except Exception:
+        pass
+    click_at(x, y)
 
 
 def send_keys(keys):
@@ -287,7 +328,7 @@ def main(argv=None):
         log(f"[see-win] no actionable elements in '{cur[1]}'")
 
     # Simple BFS: click untried actionable element, register new screen on change.
-    sig, title, elements, shot = cur
+    sig, title, elements, shot, wrappers = cur
     screens.append({"id": 0, "focus": title, "sig": sig,
                     "elements": elements, "screenshot": shot})
     cur_sig, cur_img_elems = sig, elements
@@ -304,7 +345,7 @@ def main(argv=None):
         x, y = el["pos"]
         log(f"[tap {taps+1}/{args.max_actions}] {el['role']} "
             f"'{el['name'][:40]}' @ {x},{y}")
-        click_at(x, y)
+        click_elem(wrappers.get(key), x, y)
         taps += 1
         time.sleep(1.0)
         after = capture_screen(win, no_shot=args.no_shot)
@@ -315,6 +356,7 @@ def main(argv=None):
                             "screenshot": after[3]})
             cur_sig = after[0]
             elements = after[2]
+            wrappers = after[4]
             i = 0
             tried = set()
         # if title changed to a dialog, try Escape to close it honestly

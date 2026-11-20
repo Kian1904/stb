@@ -1,0 +1,42 @@
+name: windows-see
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'stb/see_native_win.py'
+      - '.github/workflows/windows-see.yml'
+
+jobs:
+  see-notepad:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pywinauto
+        run: pip install pywinauto
+
+      - name: Run Windows See against Notepad
+        shell: pwsh
+        run: |
+          Start-Process notepad.exe
+          Start-Sleep -Seconds 3
+          python stb/see_native_win.py --app Notepad --max-actions 40 --out uimap_win.json
+
+      - name: Show uimap summary
+        shell: pwsh
+        run: |
+          python -c "import json; d=json.load(open('uimap_win.json')); print('screens:', d['screen_count'], 'taps:', d['taps_performed']); [print(' ', s['id'], repr(s['focus'][:50]), 'elems=', len(s['elements'])) for s in d['screens']]"
+
+      - name: Upload uimap artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uimap-win
+          path: |
+            uimap_win.json
+            uimap_win_traversal.log
+          if-no-files-found: error
