@@ -211,10 +211,15 @@ def screen_page_ui(s, panel_prefix):
                 f'<signal name="activate" handler="stb_on_activate" '
                 f'object="{wid}"/></object></child>')
         elif cls == "GtkComboBoxText":
+            # A GtkComboBoxText exposes its ACTIVE item's text as its AT-SPI
+            # name. Seed one item equal to the observed label and select it so
+            # the clone's combo box carries the real label (Applications /
+            # All Output Devices ...) instead of an empty name.
             lines.append(
                 f'        <child><object class="GtkComboBoxText" id="{wid}">'
                 f'<property name="visible">True</property>'
-                f'<property name="tooltip-text">{esc(label)}</property>'
+                f'<items><item translatable="no">{esc(label)}</item></items>'
+                f'<property name="active">0</property>'
                 f'</object></child>')
         else:
             lines.append(
@@ -301,6 +306,24 @@ def c_dialog_table(triggers):
     return "\n".join(lines) + "\n" + _DIALOG_C_TEMPLATE
 
 
+def screen_tab_label(s):
+    """Label for a screen's notebook page in the clone.
+
+    For tabbed apps every observed screen shares one window title, so
+    title-based labels collapse to 'Screen N: SameTitle'. The selected
+    page-tab element carries the real distinguishing label (Playback /
+    Recording / Output Devices ...); prefer it, fall back to the screen
+    title/base.
+    """
+    for e in s.get("elements", []):
+        if e.get("role") == "page tab" and "selected" in e.get("states", []):
+            lab = (e.get("label") or e.get("name") or "").strip()
+            if lab:
+                return lab
+    name = s.get("name") or {}
+    return (name.get("title") or name.get("base") or "Screen")
+
+
 def gen_gtk_ui(appmap, max_screens):
     screens = appmap["screens"][:max_screens]
     menus = collect_menubar(appmap["screens"])
@@ -338,7 +361,7 @@ def gen_gtk_ui(appmap, max_screens):
               '<property name="hexpand">True</property>'
               '<property name="vexpand">True</property>')
     for idx, s in enumerate(screens):
-        title = s["name"]["title"] or s["name"]["base"]
+        title = screen_tab_label(s)
         page, n = screen_page_ui(s, "p")
         ui.append(f'<child><object class="GtkBox"><property name="visible">'
                   f'True</property><property name="orientation">vertical'

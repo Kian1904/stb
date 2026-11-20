@@ -211,6 +211,7 @@ def build_appmap(uimap, bridge, traversal_log=None):
                 "pos": el.get("pos") or (
                     [el.get("x"), el.get("y")] if "x" in el else None),
                 "text": (el.get("text") or None),
+                "states": el.get("states") or [],
             }
             if bel.get("evidence"):
                 merged["evidence"] = bel["evidence"]
