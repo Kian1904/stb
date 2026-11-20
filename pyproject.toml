@@ -40,6 +40,7 @@ stb-bridge-native = "stb.cli:bridge_native"
 stb-canvas = "stb.cli:canvas"
 stb-see-native-win = "stb.cli:see_native_win"
 stb-see-native-mac = "stb.cli:see_native_mac"
+stb-preflight = "stb.cli:preflight"
 
 [project.urls]
 Repository = "https://github.com/Kian1904/stb"

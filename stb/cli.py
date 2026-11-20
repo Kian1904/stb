@@ -108,3 +108,9 @@ def see_native_mac():
     """stb-see-native-mac --app NAME — See phase for macOS desktop apps
     via Accessibility API (pyobjc). NOT TESTED on this Linux VM; verify on Mac."""
     _run_script("see_native_mac.py")
+
+
+def preflight():
+    """stb-preflight <path> [--block-on high|medium|low] — gate loading of
+    skills/plugins/APKs on untrusted-content scan before proceeding."""
+    _run_script("preflight_hook.py")

@@ -22,6 +22,9 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
+sys.path.insert(0, REPO)
+from stb.preflight_hook import gate as preflight_gate
+
 
 def run(cmd, timeout=600):
     r = subprocess.run(cmd, capture_output=True, timeout=timeout)
@@ -107,6 +110,23 @@ def main():
             apk_path = os.path.join(work, f"{args.package}.apk")
     results["apk"] = apk_path
     print(f"APK: {apk_path} ({os.path.getsize(apk_path)} bytes)")
+
+    # ---- pre-flight: scan APK + any extracted content before trusting it ----
+    allowed, preflight_report = preflight_gate(apk_path, block_on="high")
+    results["preflight"] = {
+        "allowed": allowed,
+        "files_scanned": preflight_report["files_scanned"],
+        "findings": preflight_report["findings"],
+        "high": preflight_report["high"],
+        "medium": preflight_report["medium"],
+        "low": preflight_report["low"],
+    }
+    if not allowed:
+        print(f"  stb-dissect: BLOCKED by pre-flight "
+              f"({preflight_report['high']} high findings) — aborting")
+        sys.exit("stb-dissect: pre-flight blocked APK")
+    print(f"  pre-flight: {preflight_report['findings']} finding(s) "
+          f"(high {preflight_report['high']}) — proceeding")
 
     # ---- 2. install ------------------------------------------------------
     if not args.skip_install:
