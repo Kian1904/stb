@@ -83,6 +83,12 @@ SKIP_ROLES = {"application", "desktop", "frame", "window", "dialog",
               "filler", "panel", "root pane", "layered pane", "separator",
               "menu bar", "title bar", "image", "custom"}
 
+# Window-management buttons only shuffle the window state (minimize /
+# maximize / restore / close) — clicking them creates a bogus "new screen"
+# (the same UI at a different geometry) instead of exploring the app.
+# Real exploration happens through menus, tabs and in-content controls.
+WINDOW_STATE_NAMES = {"minimize", "maximize", "restore", "close"}
+
 
 def _role_of(elem: UIAWrapper) -> str:
     try:
@@ -193,6 +199,14 @@ def capture_screen(win, no_shot=False):
             continue
         name = _name_of(c)
         x, y = _center(c)
+        # Skip off-screen (minimized) coordinates — clicking there is useless
+        # and the geometry would poison the signature.
+        if x < -10000 or y < -10000:
+            continue
+        # Skip window-state buttons (minimize/maximize/restore/close): they
+        # change window geometry, not the app UI, and cause exploration loops.
+        if name and name.lower() in WINDOW_STATE_NAMES:
+            continue
         key = f"{role}:{name}" if name else f"{role}:{x},{y}"
         if key in seen_keys:
             continue
@@ -339,9 +353,12 @@ def main(argv=None):
         i += 1
         key = f"{el['role']}:{el['name']}" if el["name"] else \
             f"{el['role']}:{el['pos'][0]},{el['pos'][1]}"
-        if (cur_sig, key) in tried:
+        # tried is GLOBAL by element key: re-clicking the same control after
+        # a geometry-only sig change is what caused the minimize/maximize
+        # exploration loop on Notepad.
+        if key in tried:
             continue
-        tried.add((cur_sig, key))
+        tried.add(key)
         x, y = el["pos"]
         log(f"[tap {taps+1}/{args.max_actions}] {el['role']} "
             f"'{el['name'][:40]}' @ {x},{y}")
@@ -358,7 +375,8 @@ def main(argv=None):
             elements = after[2]
             wrappers = after[4]
             i = 0
-            tried = set()
+            # NOTE: do NOT reset `tried` here — a global tried-set is what
+            # prevents geometry-only sig changes from re-triggering clicks.
         # if title changed to a dialog, try Escape to close it honestly
         if after[1] and ("dialog" in after[1].lower()
                          or "question" in after[1].lower()):
