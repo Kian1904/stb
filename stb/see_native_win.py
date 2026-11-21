@@ -350,6 +350,9 @@ def main(argv=None):
     if not cur[2]:
         log(f"[see-win] no actionable elements in '{cur[1]}'")
 
+    known_sigs = set()
+    revisit_count = 0
+
     # Simple BFS: click untried actionable element, register new screen on change.
     sig, title, elements, shot, wrappers = cur
     screens.append({"id": 0, "focus": title, "sig": sig,
@@ -396,10 +399,32 @@ def main(argv=None):
         time.sleep(1.0)
         after = capture_screen(win, no_shot=args.no_shot)
         if after[0] != cur_sig:
-            log(f"  -> new screen {after[0]} ({after[1][:40]!r})")
-            screens.append({"id": len(screens), "focus": after[1],
-                            "sig": after[0], "elements": after[2],
-                            "screenshot": after[3]})
+            if after[0] in known_sigs:
+                # Revisited a known screen (e.g. the same Open dialog reached
+                # through different paths, or slider moves re-signing it).
+                # Don't append a duplicate; count consecutive revisits and
+                # escape out of the dialog after a few to avoid cycles.
+                revisit_count += 1
+                log(f"  -> revisit {after[0]} ({after[1][:40]!r}) "
+                    f"x{revisit_count}")
+                if revisit_count >= 3 and prev_screen is not None:
+                    send_keys("{esc}")
+                    time.sleep(0.8)
+                    back = capture_screen(win, no_shot=args.no_shot)
+                    log(f"[back] esc after revisit cycle -> {back[0]} "
+                        f"({len(back[2])} elems)")
+                    cur_sig, elements, wrappers = back[0], back[2], back[4]
+                    prev_screen = None
+                    revisit_count = 0
+                    i = 0
+                    continue
+            else:
+                known_sigs.add(after[0])
+                log(f"  -> new screen {after[0]} ({after[1][:40]!r})")
+                screens.append({"id": len(screens), "focus": after[1],
+                                "sig": after[0], "elements": after[2],
+                                "screenshot": after[3]})
+                revisit_count = 0
             # Remember where we came from (with remaining untried elements)
             # so we can resume there if the new screen is a dead end.
             prev_screen = (cur_sig, elements, wrappers)
