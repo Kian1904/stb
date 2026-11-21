@@ -348,17 +348,37 @@ def main(argv=None):
     cur_sig, cur_img_elems = sig, elements
 
     i = 0
-    while taps < args.max_actions and i < len(elements):
+    # Keep a stack of (sig, elements, wrappers) so we can return to a screen
+    # that still has untried elements after opening a dead end (e.g. an open
+    # menu that exposes nothing, or a dialog we escaped).
+    prev_screen = None
+    while taps < args.max_actions:
+        if i >= len(elements):
+            # Current screen is exhausted (often 0 elements: an open menu that
+            # UIA can't read, or an empty dialog). Press Escape to get back,
+            # re-capture, and resume from the previous non-empty screen.
+            if prev_screen is not None:
+                send_keys("{esc}")
+                time.sleep(0.8)
+                back = capture_screen(win, no_shot=args.no_shot)
+                log(f"[back] esc from empty screen -> {back[0]} "
+                    f"({back[1][:40]!r}, {len(back[2])} elems)")
+                cur_sig, elements, wrappers = back[0], back[2], back[4]
+                prev_screen = None
+                i = 0
+                continue
+            break
         el = elements[i]
         i += 1
         key = f"{el['role']}:{el['name']}" if el["name"] else \
             f"{el['role']}:{el['pos'][0]},{el['pos'][1]}"
-        # tried is GLOBAL by element key: re-clicking the same control after
-        # a geometry-only sig change is what caused the minimize/maximize
-        # exploration loop on Notepad.
-        if key in tried:
+        # tried is per-screen-sig BUT the original minimize/maximize loop is
+        # already dead: window-state buttons and off-screen coords are
+        # filtered out in capture_screen, and Escape-recall resumes without
+        # re-registering duplicate screens.
+        if (cur_sig, key) in tried:
             continue
-        tried.add(key)
+        tried.add((cur_sig, key))
         x, y = el["pos"]
         log(f"[tap {taps+1}/{args.max_actions}] {el['role']} "
             f"'{el['name'][:40]}' @ {x},{y}")
@@ -371,6 +391,9 @@ def main(argv=None):
             screens.append({"id": len(screens), "focus": after[1],
                             "sig": after[0], "elements": after[2],
                             "screenshot": after[3]})
+            # Remember where we came from (with remaining untried elements)
+            # so we can resume there if the new screen is a dead end.
+            prev_screen = (cur_sig, elements, wrappers)
             cur_sig = after[0]
             elements = after[2]
             wrappers = after[4]
