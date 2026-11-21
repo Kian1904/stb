@@ -154,8 +154,11 @@ def _enabled(elem: UIAWrapper) -> bool:
 
 
 def sig_of(title, elements):
-    blob = "|".join(f"{e['role']}:{e['name']}:{e['pos'][0]},{e['pos'][1]}"
-                    for e in elements)
+    # Structure only (role:name), NOT geometry: sliders/ribbons shift element
+    # positions on every interaction, which would turn one dialog into a
+    # stream of distinct sigs. The same UI with different coordinates is the
+    # same screen.
+    blob = "|".join(f"{e['role']}:{e['name']}" for e in elements)
     return hashlib.sha1((title + "|" + blob).encode()).hexdigest()[:12]
 
 
