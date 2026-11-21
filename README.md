@@ -86,6 +86,24 @@ functions; scaffold binary runs on X11 with the full nested menu bar; verify
 correctly reports part 3 (Menus & actions) 20/20 PASS while unimplemented
 logic parts score 0 — the gap a builder agent must close.
 
+## Desktop clone scoreboard (v0.5)
+
+Every fix is generic at the pipeline level (see_native, scaffold, verify) —
+no per-app hardcoding. Clone = GTK3 app built from the map, re-seen, graded.
+
+| App | Verify | Notes |
+|---|---|---|
+| mousepad (Xfce editor) | **PASS 4/4** | 19/20 widgets, 2/2 settings, 20/20 menus, 6/6 behaviors |
+| Thunar (Xfce file manager) | **PASS 4/4** | 17/20 widgets, 11/11 settings, 20/20 menus |
+| pavucontrol (PulseAudio mixer) | **PASS 2/2** | labels 1.0, notebook-tab detection + placeholder pages |
+| xfce4-mouse-settings | **PASS 3/3** | passed first try — pipeline fixes generalized |
+
+Windows: See runs on real Windows via GitHub Actions `windows-latest`
+(UIA/pywinauto, Notepad: 12 screens / 40 taps, File/Edit/Format menus +
+Open/Replace/Font dialogs). The Notepad map scaffolds into a GTK clone that
+**verifies PASS 2/2** (menus 3/3, widgets 19/19, interactive coverage 0.935) —
+a full cross-platform round-trip.
+
 ## Setup (VM, no KVM needed)
 
 ```bash
@@ -152,8 +170,12 @@ Test subjects: NewPipe 0.29.3, Aegis (open-source, F-Droid).
 - [x] **v0.4** Clone plan: parts easy→hard, per-part toolchain + acceptance
 - [x] **v0.4** Scaffold: compilable GTK3/Android skeleton from the map (binary runs on X11)
 - [x] **v0.4** Verify: round-trip grader, per-part coverage verdict
-- [ ] Implement scaffold parts 2+ (real handlers) to lift verify verdict PARTIAL → PASS
-- [ ] Windows/macOS See (UIA / AX API — same uimap contract)
+- [x] **v0.5** Windows See (UIA/pywinauto, proven on GitHub Actions windows-latest):
+      structural signatures, revisit-cycle detection, dead-end recovery
+- [x] **v0.5** Cross-platform round-trip: Windows Notepad → GTK clone → verify PASS 2/2
+- [x] **v0.5** Desktop clone scoreboard: mousepad / Thunar / pavucontrol /
+      xfce4-mouse-settings all verify PASS (fixes generic at pipeline level)
+- [ ] macOS See (AX API — same uimap contract)
 - [ ] Blutter-class Dart snapshot parsing for richer Flutter appmaps
 - [ ] Direct deep-link navigation between screens (skip back-walking)
 - [ ] Coverage regression tracking per APK version
