@@ -89,6 +89,12 @@ SKIP_ROLES = {"application", "desktop", "frame", "window", "dialog",
 # Real exploration happens through menus, tabs and in-content controls.
 WINDOW_STATE_NAMES = {"minimize", "maximize", "restore", "close"}
 
+# UIA exposes the title-bar system menu as menu/menu item named "System"
+# (icon click target at odd coordinates). Clicking it opens the window
+# menu that Escape may not close — it is a desktop shell artifact, not
+# app UI worth exploring.
+SHELL_ARTIFACT_NAMES = {"system"}
+
 
 def _role_of(elem: UIAWrapper) -> str:
     try:
@@ -206,6 +212,9 @@ def capture_screen(win, no_shot=False):
         # Skip window-state buttons (minimize/maximize/restore/close): they
         # change window geometry, not the app UI, and cause exploration loops.
         if name and name.lower() in WINDOW_STATE_NAMES:
+            continue
+        # Skip the title-bar system menu artifact ("System" menu/menu item).
+        if name and name.lower() in SHELL_ARTIFACT_NAMES:
             continue
         key = f"{role}:{name}" if name else f"{role}:{x},{y}"
         if key in seen_keys:
