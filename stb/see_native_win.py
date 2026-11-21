@@ -158,7 +158,11 @@ def sig_of(title, elements):
     # positions on every interaction, which would turn one dialog into a
     # stream of distinct sigs. The same UI with different coordinates is the
     # same screen.
-    blob = "|".join(f"{e['role']}:{e['name']}" for e in elements)
+    # table cells are excluded too: their contents are dynamic (a scrolled
+    # list re-signs per scroll — the Notepad Font dialog produced 9 sigs for
+    # one dialog). Static roles (combo/button/menu/slider) identify the UI.
+    blob = "|".join(f"{e['role']}:{e['name']}" for e in elements
+                    if e["role"] != "table cell")
     return hashlib.sha1((title + "|" + blob).encode()).hexdigest()[:12]
 
 
